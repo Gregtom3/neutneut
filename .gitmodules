@@ -1,0 +1,3 @@
+[submodule "deps/coatjava"]
+	path = deps/coatjava
+	url = https://github.com/jeffersonlab/coatjava
