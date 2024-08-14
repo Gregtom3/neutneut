@@ -1,13 +1,7 @@
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 import numpy as np
-import torch
-from torch_geometric.data import Data, DataLoader
-from sklearn.preprocessing import MinMaxScaler
-from torch_geometric.utils import dense_to_sparse
-from torch_geometric.data import Data, Batch
-import numpy as np
-from scipy.spatial import KDTree
+import tensorflow as tf
 from tqdm import tqdm
 
 class DataPreprocessor:
@@ -34,12 +28,10 @@ class DataPreprocessor:
         """
         
         df = self._filter_peak_time(df)
-        df = self._rotate_coordinates(df)
-        df = self._one_hot_encode(df, 'sector', 6)
-        df = self._one_hot_encode(df, 'layer_A', 9)
-        df = self._one_hot_encode(df, 'layer_B', 9)
-        df = self._rescale_columns(df, ['energy_A', 'energy_B', 'time_A', 'time_B','x_rot','y_rot'])
-        df = self._delete_columns(df, ['pindex', 'mc_index', 'event_number'])
+        df = self._one_hot_encode(df, 'peak_sector', 6)
+        df = self._one_hot_encode(df, 'peak_layer', 9)
+        df = self._rescale_columns(df, ['peak_energy', 'peak_time', 'peak_xo', 'peak_yo', 'peak_zo', 'peak_xe', 'peak_ye', 'peak_ze'])
+        df = self._delete_columns(df, ['pindex', 'mc_index', 'event_number', 'status', 'id'])
         df = self._reorder_columns(df)
         
         return df
@@ -58,11 +50,11 @@ class DataPreprocessor:
         pd.DataFrame
             The filtered DataFrame.
         """
-        return df[(df['time_A'] >= 0) & (df['time_A'] <= 200) & (df['time_B'] >= 0) & (df['time_B'] >= 0)].copy()
+        return df[(df['peak_time'] >= 0) & (df['peak_time'] <= 200) & (df['peak_time'] >= 0) & (df['peak_time'] >= 0)].copy()
 
     def _rescale_columns(self, df, columns_to_scale):
         """
-        Rescale specified numeric columns between 0-1.
+        Rescale specified numeric columns between 0-1, with certain groups sharing the same min-max scaling.
 
         Parameters:
         -----------
@@ -76,7 +68,24 @@ class DataPreprocessor:
         pd.DataFrame
             The DataFrame with scaled columns.
         """
-        df[columns_to_scale] = self.scaler.fit_transform(df[columns_to_scale])
+        # Group 1: Shared scaling for 'peak_xo', 'peak_yo', 'peak_xe', 'peak_ye'
+        group_1 = ['peak_xo', 'peak_yo', 'peak_xe', 'peak_ye']
+        group_1_values = df[group_1].values.flatten()  # Flatten to find global min and max
+        min_val = group_1_values.min()
+        max_val = group_1_values.max()
+        df[group_1] = (df[group_1] - min_val) / (max_val - min_val)
+
+        # Group 2: Shared scaling for 'peak_zo' and 'peak_ze'
+        group_2 = ['peak_zo', 'peak_ze']
+        group_2_values = df[group_2].values.flatten()  # Flatten to find global min and max
+        min_val = group_2_values.min()
+        max_val = group_2_values.max()
+        df[group_2] = (df[group_2] - min_val) / (max_val - min_val)
+
+        # Other columns to scale individually
+        other_columns = [col for col in columns_to_scale if col not in group_1 + group_2]
+        df[other_columns] = self.scaler.fit_transform(df[other_columns])
+
         return df
 
     def _delete_columns(self, df, columns_to_delete):
@@ -97,34 +106,6 @@ class DataPreprocessor:
         """
         return df.drop(columns=[col for col in columns_to_delete if col in df.columns])
     
-    
-    def _rotate_coordinates(self, df):
-        """
-        Rotate the 'x' and 'y' coordinates by (sector-1)*60 degrees clockwise.
-
-        Parameters:
-        -----------
-        df : pd.DataFrame
-            The DataFrame with 'x' and 'y' coordinates to rotate.
-
-        Returns:
-        --------
-        pd.DataFrame
-            The DataFrame with rotated coordinates.
-        """
-        # Function to rotate a point by theta degrees
-        def rotate_point(x, y, theta):
-            rad = np.deg2rad(theta)
-            cos_theta = np.cos(rad)
-            sin_theta = np.sin(rad)
-            x_rot = x * cos_theta + y * sin_theta
-            y_rot = -x * sin_theta + y * cos_theta
-            return x_rot, y_rot
-
-        theta = (df['sector'] - 1) * 60
-        df[f'x_rot'], df[f'y_rot'] = rotate_point(df[f'x'], df[f'y'], theta)
-
-        return df    
     
     def _one_hot_encode(self, df, column_name, num_categories):
         """
@@ -152,7 +133,7 @@ class DataPreprocessor:
 
     def _reorder_columns(self, df):
         """
-        Reorder the DataFrame columns
+        Reorder the DataFrame columns, and rename
 
         Parameters:
         -----------
@@ -166,14 +147,17 @@ class DataPreprocessor:
         """
         # Define the new order of columns
         column_order = [
-            'file_number', 'file_event_number', 'global_event_number', 'unique_mc_index', 'mc_pid'
+            'file_number', 'file_event_number', 'unique_mc_index', 'mc_pid'
         ] + [col for col in df.columns if col not in [
-            'file_number', 'file_event_number', 'global_event_number', 'unique_mc_index', 'mc_pid'
+            'file_number', 'file_event_number', 'unique_mc_index', 'mc_pid'
         ]]
 
         # Reorder the columns
         df = df[column_order]
-
+        
+        # Rename the columns by removing the substring 'peak_'
+        df.columns = df.columns.str.replace('peak_', '', regex=False)
+        
         return df
     
     
@@ -184,7 +168,7 @@ class TrainData:
     ensuring unique mc_index across all files and splitting the data into train and test sets.
     """
 
-    def __init__(self, csv_files, train_size=0.8, graph=False, k_nearest_neighbors=5, min_intersections=2):
+    def __init__(self, csv_files, train_size=0.8, return_tensor=False, K=10):
         """
         Initialize the TrainData class with a list of CSV files and the desired train/test split.
 
@@ -194,24 +178,18 @@ class TrainData:
             List of paths to the intersection CSV files.
         train_size : float
             The proportion of the dataset to include in the train split (default is 0.8).
-        graph : bool
-            If True, generate graphs instead of dataframes.
-        k_nearest_neighbors : int
-            Number of nearest neighbors to construct graph.
-        min_intersections : int
-            Minimum number of intersections required for an event to be included (must be > 1).
+        return_tensor : bool
+            If True, returns the data as tensors instead of DataFrames.
+        K : int
+            The number of elements to include in each tensor along the second dimension.
         """
-        if min_intersections <= 1:
-            raise ValueError("min_intersections must be greater than 1")
-
         self.csv_files = csv_files
         self.train_size = train_size
-        self.graph = graph
-        self.k_nearest_neighbors = k_nearest_neighbors
-        self.min_intersections = min_intersections
+        self.return_tensor = return_tensor
+        self.K = K
         self.data = pd.DataFrame()
-        self.train_data = pd.DataFrame()
-        self.test_data = pd.DataFrame()
+        self.train_data = None
+        self.test_data = None
 
         # Automatically load, merge, preprocess, and split the data upon initialization
         self._load_and_merge_csvs()
@@ -219,171 +197,85 @@ class TrainData:
         self._split_data()
 
     def _load_and_merge_csvs(self):
-        """
-        Load and merge multiple intersection CSV files into a single DataFrame,
-        ensuring unique mc_index and properly tagging event numbers.
-        Filter out events with fewer intersections than min_intersections.
-        Also, report statistics after loading.
-        """
-        unique_mc_index_offset = 0  # Offset to ensure unique_mc_index across all files
-        global_event_number = 0  # Global event number across all files
-        total_events_added = 0  # Total number of events added
-
+        unique_mc_index_offset = 0
+        total_events_added = 0
         merged_data = []
 
-        for file_number, csv_file in tqdm(enumerate(self.csv_files)):
-            # Load the CSV file
+        for file_number, csv_file in tqdm(enumerate(self.csv_files), total=len(self.csv_files)):
             try:
                 df = pd.read_csv(csv_file)
-            except: # No columns in csv file
+            except:
                 continue
-            # Add file_number and global_event_number to the DataFrame
+
             df['file_number'] = file_number
             df['file_event_number'] = df['event_number']
-            df['global_event_number'] = df['event_number'] + global_event_number
 
-            # Filter events based on min_intersections
-            intersection_counts = df['global_event_number'].value_counts()
-            valid_events = intersection_counts[intersection_counts >= self.min_intersections].index
-            df = df[df['global_event_number'].isin(valid_events)]
-
-            # Update the offset for the next file
             if not df.empty:
                 if unique_mc_index_offset > 0:
                     df.loc[df['unique_mc_index'] != -1, 'unique_mc_index'] += unique_mc_index_offset
                 unique_mc_index_offset = df['unique_mc_index'].max() + 1
 
-            # Update global_event_number for the next file
-            global_event_number += df['event_number'].max() + 1
-
-            # Gather statistics
             events_added = len(df)
-            total_events_added += events_added
-
             merged_data.append(df)
 
-        # Concatenate all DataFrames
         self.data = pd.concat(merged_data, ignore_index=True)
 
-        # Check if the merged DataFrame is empty
         if self.data.empty:
             raise ValueError("No data available after loading and merging CSV files. Please check your input files or filtering criteria.")
 
-        # Report statistics
-        total_files = len(self.csv_files)
-        print(f"Total files processed: {total_files}")
-        print(f"Total intersections found: {total_events_added}")
+        print(f"Total files processed: {len(self.csv_files)}")
 
     def _preprocess_data(self):
-        """
-        Preprocess the merged data using the DataPreprocessor class.
-        """
         preprocessor = DataPreprocessor()
         self.data = preprocessor.preprocess(self.data)
 
     def _split_data(self):
-        """
-        Split the merged and preprocessed data into train and test sets based on the specified train_size.
-        """
-        # Shuffle the data
         self.data = self.data.sample(frac=1, random_state=42).reset_index(drop=True)
-
-        # Split the data into train and test sets
         train_size = int(len(self.data) * self.train_size)
         self.train_data = self.data[:train_size]
         self.test_data = self.data[train_size:]
 
-        if self.graph:
-            self.train_data = self._convert_to_graphs(self.train_data)
-            self.test_data = self._convert_to_graphs(self.test_data)
+        if self.return_tensor:
+            self.train_data = self._convert_to_tensor(self.train_data)
+            self.test_data = self._convert_to_tensor(self.test_data)
 
-    def _convert_to_graphs(self, df):
-        """
-        Convert a DataFrame into a list of graphs, connecting nodes by nearest neighbors in (x, y) space.
-
-        Parameters:
-        -----------
-        df : pd.DataFrame
-            The DataFrame to convert.
-
-        Returns:
-        --------
-        list of torch_geometric.data.Data
-            A list of graphs corresponding to the events in the DataFrame.
-        """
-        graphs = []
+    def _convert_to_tensor(self, df):
         feature_columns = [
-            'energy_A', 'energy_B', 'time_A', 'time_B',
-            'x_rot', 'y_rot', 'sector_1', 'sector_2', 'sector_3', 'sector_4',
-            'sector_5', 'sector_6', 'layer_A_1', 'layer_A_2', 'layer_A_3',
-            'layer_A_4', 'layer_A_5', 'layer_A_6', 'layer_A_7', 'layer_A_8',
-            'layer_A_9', 'layer_B_1', 'layer_B_2', 'layer_B_3', 'layer_B_4',
-            'layer_B_5', 'layer_B_6', 'layer_B_7', 'layer_B_8', 'layer_B_9'
+            'energy', 'time', 'xo', 'yo', 'zo', 'xe', 'ye', 'ze',
+            'sector_1', 'sector_2', 'sector_3', 'sector_4',
+            'sector_5', 'sector_6', 'layer_1', 'layer_2', 'layer_3', 'layer_4',
+            'layer_5', 'layer_6', 'layer_7', 'layer_8', 'layer_9', 
+            'rec_pid', 'pindex', 'mc_pid', 'unique_mc_index'
         ]
 
-        for event_id, group in df.groupby('global_event_number'):
-            x = torch.tensor(group[feature_columns].values, dtype=torch.float)
-            y = torch.tensor(group['unique_mc_index'].values, dtype=torch.long)
+        tensors = []
+        grouped = df.groupby(['file_number', 'file_event_number'])
 
-            # Extract (x, y) coordinates for KDTree
-            coords = group[['x', 'y']].values
-            tree = KDTree(coords)
+        for _, group in grouped:
+            group = group.sort_values(by='energy', ascending=False)
+            tensor = group[feature_columns].values[:self.K]
+            
+            if len(tensor) < self.K:
+                padding = np.zeros((self.K - len(tensor), len(feature_columns)))
+                tensor = np.vstack([tensor, padding])
+            
+            tensors.append(tensor)
 
-            # Ensure k doesn't exceed the number of available points
-            k = min(self.k_nearest_neighbors + 1, len(coords))
-
-            # Find the nearest neighbors for each point
-            edge_index = []
-            for i, coord in enumerate(coords):
-                distances, neighbors = tree.query(coord, k=k)  # Adjust k based on the available points
-
-                # Ensure neighbors is treated as a 1D array
-                neighbors = np.atleast_1d(neighbors)
-
-                for neighbor in neighbors[1:]:  # Exclude the point itself
-                    if neighbor < len(coords):
-                        edge_index.append([i, neighbor])
-
-            edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
-
-            graph = Data(x=x, edge_index=edge_index, y=y)
-            graphs.append(graph)
-
-        return graphs
+        return tf.convert_to_tensor(tensors, dtype=tf.float32)
 
     def get_train_data(self):
-        """
-        Get the train DataFrame or list of graphs.
-
-        Returns:
-        --------
-        pd.DataFrame or list of torch_geometric.data.Data
-            The DataFrame or list of graphs containing the training data.
-        """
-        return self.train_data
+        return self._get_data(self.train_data)
 
     def get_test_data(self):
-        """
-        Get the test DataFrame or list of graphs.
+        return self._get_data(self.test_data)
+                                                     
+    def _get_data(self, data):
+        X = data[:, :, :23]
+        y = data[:, :, -1:]
+        misc = data[:, :, 23:-1]
 
-        Returns:
-        --------
-        pd.DataFrame or list of torch_geometric.data.Data
-            The DataFrame or list of graphs containing the testing data.
-        """
-        return self.test_data
+        # Cast y to int32
+        y = tf.cast(y, tf.int32)
 
-    def save_train_test_to_csv(self, train_filename, test_filename):
-        """
-        Save the train and test DataFrames to separate CSV files.
-
-        Parameters:
-        -----------
-        train_filename : str
-            The path to the output train CSV file.
-        test_filename : str
-            The path to the output test CSV file.
-        """
-        if not self.graph:
-            self.train_data.to_csv(train_filename, index=False)
-            self.test_data.to_csv(test_filename, index=False)
+        return X, y, misc
+                                                     
