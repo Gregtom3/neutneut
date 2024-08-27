@@ -28,19 +28,23 @@ class ModelEcalPlotter:
             (0.184, 0.310, 0.310),
             (0.000, 0.749, 1.000)
         ]
-        self.object_ids = self.event["unique_mc_index"].values
+        self.object_ids = self.event["unique_otid"].values
         self.mc_pid = self.event["mc_pid"].values
         self.rec_pid = self.event["rec_pid"].values
         self.pindex = self.event["pindex"].values
         self.beta = self.event["beta"].values
         self.xc = self.event["xc"].values
         self.yc = self.event["yc"].values
+        self.centroid_x = self.event["centroid_x"].values
+        self.centroid_y = self.event["centroid_y"].values
         self.is_cluster_leader = self.event["is_cluster_leader"].values
         self.cluster_ids = self.event["cluster_id"].values
         self.event_xo = self.event["xo"].values
         self.event_yo = self.event["yo"].values
         self.event_xe = self.event["xe"].values
         self.event_ye = self.event["ye"].values
+        self.pred_centroid_x = self.event["pred_centroid_x"].values
+        self.pred_centroid_y = self.event["pred_centroid_y"].values
         self.N_hits = len(self.event)
         self.xc_range = (np.amin(self.xc) - 1, np.amax(self.xc) + 1)
         self.yc_range = (np.amin(self.yc) - 1, np.amax(self.yc) + 1)
@@ -69,9 +73,8 @@ class ModelEcalPlotter:
             321: '*',  # K+
             -321: 'X',  # K-
             -1: 'P',  # Background
-            -11: 'D'  # positron
         }
-        return marker_map.get(pid, 'x')  # default to 'x' if PID not in map
+        return marker_map.get(pid, 'D')  # default to 'D' if PID not in map
 
     @staticmethod
     def draw_six_sectors(ax):
@@ -99,7 +102,11 @@ class ModelEcalPlotter:
             ax.scatter(self.event_xe[idx], self.event_ye[idx], color=color, edgecolor="k", marker=marker)
         ax.legend(frameon=True, ncols=2, bbox_to_anchor=(0.5, 1), loc='lower center')
         for i in range(self.event_xo.shape[0]):
-            ax.plot([self.event_xo[i], self.event_xe[i]], [self.event_yo[i], self.event_ye[i]], color='black', alpha=0.2)
+            ax.plot([self.event_xo[i], self.event_xe[i]], [self.event_yo[i], self.event_ye[i]], color='black', alpha=0.075)
+        for (x,y) in zip(self.centroid_x,self.centroid_y):
+            if x==0 and y==0:
+                continue
+            ax.scatter(x,y,s=25,color="gray",marker="o",edgecolor="k",zorder=100)
         ax.set_xlabel("ECAL::peaks (X)")
         ax.set_ylabel("ECAL::peaks (Y)")
         self.draw_six_sectors(ax)
@@ -123,8 +130,10 @@ class ModelEcalPlotter:
         ax.legend(frameon=True, ncols=2, bbox_to_anchor=(0.5, 1), loc='lower center')
         ax.set_xlabel("Latent X Coordinate")
         ax.set_ylabel("Latent Y Coordinate")
-        ax.set_xlim(self.xc_range[0], self.xc_range[1])
-        ax.set_ylim(self.yc_range[0], self.yc_range[1])
+        #ax.set_xlim(self.xc_range[0], self.xc_range[1])
+        #ax.set_ylim(self.yc_range[0], self.yc_range[1])
+        ax.set_xlim(-3,3)
+        ax.set_ylim(-3,3)
         return ax
 
     def plot_rec_peaks(self, ax=None):
@@ -153,7 +162,7 @@ class ModelEcalPlotter:
             fig, ax = plt.subplots()
         for ic, cluster_id in enumerate(sorted(np.unique(self.cluster_ids))):
             idx = self.cluster_ids == cluster_id
-            color = self.colors[-ic]
+            color = self.colors[ic % len(self.colors)]
             if cluster_id == -1:
                 ax.scatter(self.event_xo[idx], self.event_yo[idx], color="white", edgecolor="k", label=f"Background", marker="X")
                 ax.scatter(self.event_xe[idx], self.event_ye[idx], color="white", edgecolor="k", marker="X")
@@ -168,8 +177,10 @@ class ModelEcalPlotter:
             ihit = np.where((self.is_cluster_leader == 1) & (self.cluster_ids == cluster_id))[0][0]
             leader_xo, leader_yo = self.event_xo[ihit], self.event_yo[ihit]
             leader_xe, leader_ye = self.event_xe[ihit], self.event_ye[ihit]
-            color = self.colors[-ic]
+            leader_centroid_x, leader_centroid_y = self.pred_centroid_x[ihit], self.pred_centroid_y[ihit]
+            color = self.colors[ic % len(self.colors)]
             ax.scatter([leader_xo, leader_xe], [leader_yo, leader_ye], color=color, s=150, edgecolor="k", hatch="...", marker="s")
+            ax.scatter([leader_centroid_x],[leader_centroid_y], color=color, s=150, edgecolor="k", hatch="...", marker="^")
         ax.legend(frameon=True, ncols=2, bbox_to_anchor=(0.5, -0.15), loc='upper center')
         ax.set_xlabel("ECAL::peaks (X)")
         ax.set_ylabel("ECAL::peaks (Y)")
@@ -185,12 +196,12 @@ class ModelEcalPlotter:
             raise ValueError("Error: Must input valid tD.")
         for ic, cluster_id in enumerate(sorted(np.unique(self.cluster_ids))):
             idx = self.cluster_ids == cluster_id
-            color = self.colors[-ic]
+            color = self.colors[ic % len(self.colors)]
             if cluster_id == -1:
-                ax.scatter(self.xc[idx], self.yc[idx], color="white", edgecolor="k", alpha=self.beta[idx])
+                ax.scatter(self.xc[idx], self.yc[idx], color="white", edgecolor="k", alpha=np.maximum(self.beta[idx],0.05))
                 ax.scatter([], [], color="white", edgecolor="k", label=f"Background", alpha=1)
             else:
-                ax.scatter(self.xc[idx], self.yc[idx], color=color, edgecolor="k", alpha=self.beta[idx])
+                ax.scatter(self.xc[idx], self.yc[idx], color=color, edgecolor="k", alpha=np.maximum(self.beta[idx],0.05))
                 ax.scatter([], [], color=color, edgecolor="k", label=f"Cluster {ic+1}", alpha=1)
                 for ihit in range(self.N_hits):
                     if self.is_cluster_leader[ihit] != 1 or self.cluster_ids[ihit] != cluster_id:
@@ -201,8 +212,10 @@ class ModelEcalPlotter:
         ax.legend(frameon=True, ncols=2, bbox_to_anchor=(0.5, -0.15), loc='upper center')
         ax.set_xlabel("Latent X Coordinate")
         ax.set_ylabel("Latent Y Coordinate")
-        ax.set_xlim(self.xc_range[0], self.xc_range[1])
-        ax.set_ylim(self.yc_range[0], self.yc_range[1])
+        #ax.set_xlim(self.xc_range[0], self.xc_range[1])
+        #ax.set_ylim(self.yc_range[0], self.yc_range[1])
+        ax.set_xlim(-3,3)
+        ax.set_ylim(-3,3)
         return ax
 
     def plot_beta_histogram(self, ax=None):
@@ -210,16 +223,16 @@ class ModelEcalPlotter:
             fig, ax = plt.subplots()
         for ic, cluster_id in enumerate(sorted(np.unique(self.cluster_ids))):
             idx = self.cluster_ids == cluster_id
-            color = self.colors[-ic]
+            color = self.colors[ic % len(self.colors)]
             if cluster_id == -1:
-                ax.hist(self.beta[idx], range=(0, 1), bins=25, edgecolor="black", zorder=10, histtype="step")
+                ax.hist(self.beta[idx], range=(0, 1), bins=100, edgecolor="black", zorder=10, histtype="step")
             else:
-                ax.hist(self.beta[idx], range=(0, 1), bins=25, color=color, alpha=0.3)
+                ax.hist(self.beta[idx], range=(0, 1), bins=100, color=color, alpha=0.3)
         ax.set_xlabel("Learned $\\beta$")
         return ax
 
-    def plot_all(self, tD):
-        fig, axs = plt.subplots(2, 3, figsize=(12, 8), dpi=150)
+    def plot_all(self, tD, out=None, suptitle=None):
+        fig, axs = plt.subplots(2, 3, figsize=(18, 12), dpi=150, facecolor='white')
         axs = axs.flatten()
         self.plot_mc_peaks(ax=axs[0])
         self.plot_latent_coordinates(ax=axs[1])
@@ -227,5 +240,14 @@ class ModelEcalPlotter:
         self.plot_clustered_ecal_peaks(ax=axs[3])
         self.plot_cluster_latent_space(tD, ax=axs[4])
         self.plot_beta_histogram(ax=axs[5])
-        plt.tight_layout()
-        return axs
+        
+        # Adjust the spacing between subplots to make them slightly smaller
+        plt.subplots_adjust(left=0.08, right=0.92, top=0.825, bottom=0.15, wspace=0.3, hspace=0.3)
+    
+        if suptitle!=None:
+            fig.suptitle(suptitle,fontsize=20)
+        if out!=None:
+            plt.savefig(out)
+            plt.close()
+        else:
+            return axs
