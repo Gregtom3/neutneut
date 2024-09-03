@@ -7,8 +7,7 @@ import random
 
 class Evaluator:
     
-    def __init__(self, X=None, y=None, misc=None, is_intersections=False):
-        self.is_intersections = is_intersections
+    def __init__(self, X=None, y=None, misc=None):
         self.X = tf.convert_to_tensor(X) if X is not None else tf.constant(0)
         self.y = tf.convert_to_tensor(y) if y is not None else tf.constant(0)
         self.misc = tf.convert_to_tensor(misc) if misc is not None else tf.constant(0)
@@ -19,20 +18,11 @@ class Evaluator:
         
         
     def _create_dataframe_structure(self):
-        if self.is_intersections:
-            columns = [
-                'event', 'energy_A','energy_B','energy_C',
-                'time_A', 'time_B','time_C',
-                'xo', 'yo', 'zo', 'xe', 'ye', 'ze',
-                'sector', 'layer', 'rec_pid', 'pindex', 'mc_pid',
-                'unique_otid', 'beta', 'xc', 'yc', 'cluster_id', 'is_cluster_leader'
-            ]
-        else:
-            columns = [
-                'event', 'energy', 'time', 'xo', 'yo', 'zo', 'xe', 'ye', 'ze',
-                'sector', 'layer', 'centroid_x', 'centroid_y', 'rec_pid', 'pindex', 'mc_pid',
-                'unique_otid', 'beta', 'xc', 'yc', 'cluster_id', 'is_cluster_leader', 'pred_centroid_x','pred_centroid_y'
-            ]
+        columns = [
+            'event', 'energy', 'time', 'xo', 'yo', 'zo', 'xe', 'ye', 'ze',
+            'sector', 'layer', 'centroid_x', 'centroid_y', 'rec_pid', 'pindex', 'mc_pid',
+            'unique_otid', 'beta', 'xc', 'yc', 'cluster_id', 'is_cluster_leader', 'pred_centroid_x','pred_centroid_y'
+        ]
         
         return pd.DataFrame(columns=columns)
     
@@ -59,92 +49,38 @@ class Evaluator:
         
         N, M, _ = self.X.shape
         
-        try:
-#             # Extract sector and layer from one-hot encoded columns
-#             if self.is_intersections == False:
-#                 sector = np.argmax(self.X.numpy()[:,:,8:14], axis=2) + 1
-#                 layer = np.argmax(self.X.numpy()[:,:,14:23], axis=2) + 1
-#             else:
-#                 sector = np.argmax(self.X.numpy()[:,:,11:17], axis=2) + 1
-#                 layer = np.argmax(self.X.numpy()[:,:,8:11], axis=2) + 1
+        sector = np.argmax(self.X.numpy()[:,:,23:29], axis=2) + 1
+        layer = np.argmax(self.X.numpy()[:,:,8:17], axis=2) + 1
 
-            if self.is_intersections == False:
-                df_data = {
-                    'event': np.repeat(np.arange(N), M),
-                    'energy': self.X.numpy()[:,:,0].flatten(),
-                    'time': self.X.numpy()[:,:,1].flatten(),
-                    'xo': self.X.numpy()[:,:,2].flatten(),
-                    'yo': self.X.numpy()[:,:,3].flatten(),
-                    'zo': self.X.numpy()[:,:,4].flatten(),
-                    'xe': self.X.numpy()[:,:,5].flatten(),
-                    'ye': self.X.numpy()[:,:,6].flatten(),
-                    'ze': self.X.numpy()[:,:,7].flatten(),
-                    #'sector': sector.flatten(),
-                    #'layer': layer.flatten(),
-                    'centroid_x': self.X.numpy()[:,:,17].flatten(),
-                    'centroid_y': self.X.numpy()[:,:,18].flatten(),
-                    'rec_pid': self.misc.numpy()[:,:,0].flatten() if not tf.reduce_all(tf.equal(self.misc, 0)) else np.zeros(N * M),
-                    'pindex': self.misc.numpy()[:,:,1].flatten() if not tf.reduce_all(tf.equal(self.misc, 0)) else np.zeros(N * M),
-                    'mc_pid': self.misc.numpy()[:,:,2].flatten() if not tf.reduce_all(tf.equal(self.misc, 0)) else np.zeros(N * M),
-                    'unique_otid': self.y.numpy()[:,:,0].flatten(),
-                    'beta': out[:,:,0].flatten(),
-                    'xc': out[:,:,1].flatten(),
-                    'yc': out[:,:,2].flatten(),
-                    'pred_centroid_x': out[:,:,3].flatten(),
-                    'pred_centroid_y': out[:,:,4].flatten(),
-                    'cluster_id': -1,
-                    'is_cluster_leader': 0
-                }
-            else:
-                df_data = {
-                    'event': np.repeat(np.arange(N), M),
-                    'xo': self.X.numpy()[:,:,0].flatten(),
-                    'yo': self.X.numpy()[:,:,1].flatten(),
-                    'xe': self.X.numpy()[:,:,0].flatten(),
-                    'ye': self.X.numpy()[:,:,1].flatten(),
-                    'zo': 0*self.X.numpy()[:,:,0].flatten(),
-                    'ze': 0*self.X.numpy()[:,:,1].flatten(),
-                    'energy_A': self.X.numpy()[:,:,2].flatten(),
-                    'energy_B': self.X.numpy()[:,:,3].flatten(),
-                    'energy_C': self.X.numpy()[:,:,4].flatten(),
-                    'time_A': self.X.numpy()[:,:,5].flatten(),
-                    'time_B': self.X.numpy()[:,:,6].flatten(),
-                    'time_C': self.X.numpy()[:,:,7].flatten(),
-                    #'sector': sector.flatten(),
-                    #'layer': layer.flatten(),
-                    'rec_pid': self.misc.numpy()[:,:,0].flatten() if not tf.reduce_all(tf.equal(self.misc, 0)) else np.zeros(N * M),
-                    'pindex': self.misc.numpy()[:,:,1].flatten() if not tf.reduce_all(tf.equal(self.misc, 0)) else np.zeros(N * M),
-                    'mc_pid': self.misc.numpy()[:,:,2].flatten() if not tf.reduce_all(tf.equal(self.misc, 0)) else np.zeros(N * M),
-                    'unique_otid': self.y.numpy()[:,:,0].flatten(),
-                    'beta': out[:,:,0].flatten(),
-                    'xc': out[:,:,1].flatten(),
-                    'yc': out[:,:,2].flatten(),
-                    'cluster_id': -1,
-                    'is_cluster_leader': 0
-                }
-                
-        except:
-            if self.is_intersections == False:
-                raise ValueError("NOT IMPLEMENTED")
-            else:
-                df_data = {
-                    'event': np.repeat(np.arange(N), M),
-                    'xo': self.X.numpy()[:,:,0].flatten(),
-                    'yo': self.X.numpy()[:,:,1].flatten(),
-                    'xe': self.X.numpy()[:,:,0].flatten(),
-                    'ye': self.X.numpy()[:,:,1].flatten(),
-                    'zo': 0*self.X.numpy()[:,:,0].flatten(),
-                    'ze': 0*self.X.numpy()[:,:,1].flatten(),
-                    'rec_pid': self.misc.numpy()[:,:,0].flatten() if not tf.reduce_all(tf.equal(self.misc, 0)) else np.zeros(N * M),
-                    'pindex': self.misc.numpy()[:,:,1].flatten() if not tf.reduce_all(tf.equal(self.misc, 0)) else np.zeros(N * M),
-                    'mc_pid': self.misc.numpy()[:,:,2].flatten() if not tf.reduce_all(tf.equal(self.misc, 0)) else np.zeros(N * M),
-                    'unique_otid': self.y.numpy()[:,:,0].flatten(),
-                    'beta': out[:,:,0].flatten(),
-                    'xc': out[:,:,1].flatten(),
-                    'yc': out[:,:,2].flatten(),
-                    'cluster_id': -1,
-                    'is_cluster_leader': 0
-                }
+        df_data = {
+            'event': np.repeat(np.arange(N), M),
+            'energy': self.X.numpy()[:,:,0].flatten(),
+            'time': self.X.numpy()[:,:,1].flatten(),
+            'xo': self.X.numpy()[:,:,2].flatten(),
+            'yo': self.X.numpy()[:,:,3].flatten(),
+            'zo': self.X.numpy()[:,:,4].flatten(),
+            'xe': self.X.numpy()[:,:,5].flatten(),
+            'ye': self.X.numpy()[:,:,6].flatten(),
+            'ze': self.X.numpy()[:,:,7].flatten(),
+            'sector': sector.flatten(),
+            'layer': layer.flatten(),
+            'centroid_x': self.X.numpy()[:,:,17].flatten(),
+            'centroid_y': self.X.numpy()[:,:,18].flatten(),
+            'is_3way_same_group': self.X.numpy()[:,:,19].flatten(),
+            'is_2way_same_group': self.X.numpy()[:,:,20].flatten(),
+            'is_3way_cross_group': self.X.numpy()[:,:,21].flatten(),
+            'is_2way_cross_group': self.X.numpy()[:,:,22].flatten(),
+            'rec_pid': self.misc.numpy()[:,:,0].flatten() if not tf.reduce_all(tf.equal(self.misc, 0)) else np.zeros(N * M),
+            'pindex': self.misc.numpy()[:,:,1].flatten() if not tf.reduce_all(tf.equal(self.misc, 0)) else np.zeros(N * M),
+            'mc_pid': self.misc.numpy()[:,:,2].flatten() if not tf.reduce_all(tf.equal(self.misc, 0)) else np.zeros(N * M),
+            'unique_otid': self.y.numpy()[:,:,0].flatten(),
+            'beta': out[:,:,0].flatten(),
+            'xc': out[:,:,1].flatten(),
+            'yc': out[:,:,2].flatten(),
+            'cluster_id': -1,
+            'is_cluster_leader': 0
+        }
+
         self.dataframe = pd.DataFrame(df_data)
 
         # Remove rows where all specified columns are zero
@@ -189,3 +125,47 @@ class Evaluator:
                 
                 # Increment cluster_id for the next cluster
                 cluster_id += 1
+                
+    def calculate_calorimeter_clusters(self, option):
+        if option not in ["with_clustering", "with_recon", "with_truth"]:
+            raise ValueError("Option must be 'with_clustering', 'with_recon', or 'with_truth'.")
+        
+        indexing_var = {'with_clustering': 'cluster_id', 'with_recon': 'pindex', 'with_truth': 'unique_otid'}[option]
+        clusterX_col = f"calorimeter_clusterX_{option}"
+        clusterY_col = f"calorimeter_clusterY_{option}"
+        
+        self.dataframe[clusterX_col] = 0.0
+        self.dataframe[clusterY_col] = 0.0
+        
+        for event_id, event_data in self.dataframe.groupby('event'):
+            for idx_value, group in event_data.groupby(indexing_var):
+                if idx_value == -1:
+                    continue
+                
+                sector_counts = group['sector'].value_counts()
+                most_common_sector = sector_counts.idxmax()
+                
+                if sector_counts[most_common_sector] == 1:
+                    continue
+                
+                priority_columns = [
+                    'is_3way_same_group',
+                    'is_2way_same_group',
+                    'is_3way_cross_group',
+                    'is_2way_cross_group'
+                ]
+                
+                found = False
+                for col in priority_columns:
+                    filtered_group = group[(group['sector'] == most_common_sector) & (group[col] == 1)]
+                    if not filtered_group.empty:
+                        mean_centroid_x = filtered_group['centroid_x'].mean()
+                        mean_centroid_y = filtered_group['centroid_y'].mean()
+                        self.dataframe.loc[group.index, clusterX_col] = mean_centroid_x
+                        self.dataframe.loc[group.index, clusterY_col] = mean_centroid_y
+                        found = True
+                        break
+                
+                if not found:
+                    self.dataframe.loc[group.index, clusterX_col] = 0.0
+                    self.dataframe.loc[group.index, clusterY_col] = 0.0

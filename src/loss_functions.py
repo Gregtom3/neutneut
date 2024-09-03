@@ -91,12 +91,6 @@ def condensation_loss(
         tf.cast(tf.shape(unique_oids)[0], tf.float32),
     )
     
-    # Remove the 1/K since we don't want to favor cases with less objects
-#     coward_loss = tf.math.divide_no_nan(
-#         tf.reduce_sum(coward_loss_k),
-#         1.0
-#     )
-    
     check_for_nans(coward_loss, "NaN detected after calculating coward_loss")
 
     noise_loss = tf.math.divide_no_nan(
@@ -113,78 +107,80 @@ def condensation_loss(
     }
 
             
+def calculate_losses(y_true, y_pred, q_min):
+    object_id = tf.cast(y_true[:, :, 0], tf.int32)
+
+    beta = tf.reshape(y_pred[:, :, 0:1], [-1, 1])
+    x = tf.reshape(y_pred[:, :, 1:3], [-1, 2])
+
+    # Compute condensation loss
+    loss_dict = condensation_loss(q_min=q_min,
+                                  object_id=object_id,
+                                  beta=beta,
+                                  x=x,
+                                  noise_threshold=-1)
+
+    return loss_dict
+
+
 class CustomLoss(tf.keras.losses.Loss):
-    def __init__(self, q_min=0.1, reduction=tf.keras.losses.Reduction.AUTO, name="custom_loss"):
+    def __init__(self, q_min=0.1, reduction=tf.keras.losses.Reduction.SUM, name="custom_loss"):
         super(CustomLoss, self).__init__(reduction=reduction, name=name)
         self.q_min = q_min
-        self.result_values = {
-            "attractive": tf.Variable(0.0, trainable=False, name="attractive_loss"),
-            "repulsive": tf.Variable(0.0, trainable=False, name="repulsive_loss"),
-            "coward": tf.Variable(0.0, trainable=False, name="coward_loss"),
-            "noise": tf.Variable(0.0, trainable=False, name="noise_loss"),
-            "centroid": tf.Variable(0.0, trainable=False, name="centroid_loss"),
-        }
 
     def call(self, y_true, y_pred):
-        object_id = y_true[:, 0]
-        true_centroid_x = y_true[:, 1]
-        true_centroid_y = y_true[:, 2]
-        
-        beta = tf.reshape(y_pred[:,:,0:1], [-1, 1])
-        x    = tf.reshape(y_pred[:,:,1:3], [-1, 2])
-        pred_centroid_x = tf.reshape(y_pred[:,:,3], [-1, 1])
-        pred_centroid_y = tf.reshape(y_pred[:,:,4], [-1, 1])
-        
-        # Compute condensation loss
-        loss_dict = condensation_loss(q_min=self.q_min,
-                                      object_id=object_id, 
-                                      beta=beta,
-                                      x=x,
-                                      noise_threshold=-1)
-        
-        # Update result values for the loss components
-        self.result_values["attractive"].assign(loss_dict['attractive'])
-        self.result_values["repulsive"].assign(loss_dict['repulsive'])
-        self.result_values["coward"].assign(loss_dict['coward'])
-        self.result_values["noise"].assign(loss_dict['noise'])
-
-        # Calculate `ni` where object_id equals -1
-        ni = tf.cast(object_id == -1, tf.float32)
-
-        # Calculate `xi` as (1 - ni) * (atanh(beta) ** 2)
-        beta_atanh = tf.math.atanh(beta)
-        xi = (1 - ni) * (beta_atanh ** 2)
-
-        # Calculate the regressive loss for centroids (quadrature)
-        loss_centroid_x = tf.square(pred_centroid_x - tf.reshape(true_centroid_x, [-1, 1]))
-        loss_centroid_y = tf.square(pred_centroid_y - tf.reshape(true_centroid_y, [-1, 1]))
-        loss_centroid = tf.sqrt(loss_centroid_x + loss_centroid_y)
-
-        # Weighted sum of centroid losses by xi
-        weighted_loss_centroid = tf.reduce_sum(xi * loss_centroid) / tf.reduce_sum(xi)
-
-        # Update result value for centroid loss
-        self.result_values["centroid"].assign(weighted_loss_centroid)
+        loss_dict = calculate_losses(y_true, y_pred, self.q_min)
 
         # Combine the losses
-        total_loss = (self.result_values["attractive"] +
-                      self.result_values["repulsive"] +
-                      self.result_values["coward"] +
-                      self.result_values["noise"] +
-                      self.result_values["centroid"])
+        total_loss = (loss_dict['attractive'] +
+                      loss_dict['repulsive'] +
+                      loss_dict['coward'] +
+                      loss_dict['noise'])
 
         return total_loss
 
-    def get_metrics(self):
-        return self.result_values
-
     def get_config(self):
         config = super(CustomLoss, self).get_config()
-        config.update({
-            "q_min": self.q_min,
-        })
+        config.update({"q_min": self.q_min})
         return config
 
     @classmethod
     def from_config(cls, config):
         return cls(**config)
+
+    
+class AttractiveLossMetric(tf.keras.metrics.Mean):
+    def __init__(self, q_min=0.1, name="attractive_loss", **kwargs):
+        super(AttractiveLossMetric, self).__init__(name=name, **kwargs)
+        self.q_min = q_min
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        loss_dict = calculate_losses(y_true, y_pred, self.q_min)
+        return super(AttractiveLossMetric, self).update_state(loss_dict['attractive'], sample_weight)
+
+class RepulsiveLossMetric(tf.keras.metrics.Mean):
+    def __init__(self, q_min=0.1, name="repulsive_loss", **kwargs):
+        super(RepulsiveLossMetric, self).__init__(name=name, **kwargs)
+        self.q_min = q_min
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        loss_dict = calculate_losses(y_true, y_pred, self.q_min)
+        return super(RepulsiveLossMetric, self).update_state(loss_dict['repulsive'], sample_weight)
+
+class CowardLossMetric(tf.keras.metrics.Mean):
+    def __init__(self, q_min=0.1, name="coward_loss", **kwargs):
+        super(CowardLossMetric, self).__init__(name=name, **kwargs)
+        self.q_min = q_min
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        loss_dict = calculate_losses(y_true, y_pred, self.q_min)
+        return super(CowardLossMetric, self).update_state(loss_dict['coward'], sample_weight)
+
+class NoiseLossMetric(tf.keras.metrics.Mean):
+    def __init__(self, q_min=0.1, name="noise_loss", **kwargs):
+        super(NoiseLossMetric, self).__init__(name=name, **kwargs)
+        self.q_min = q_min
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        loss_dict  = calculate_losses(y_true, y_pred, self.q_min)
+        return super(NoiseLossMetric, self).update_state(loss_dict['noise'], sample_weight)

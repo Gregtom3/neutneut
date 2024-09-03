@@ -2,7 +2,6 @@ import pandas as pd
 import numpy as np
 from itertools import combinations
 from ECALDataReader import ECALDataReader
-from ECALDataProcessor import ECALDataProcessor
 import csv
 from tqdm import tqdm
 
@@ -12,7 +11,7 @@ class ECALDataAnalyzer:
     Class to analyze ECAL data and write the results to a CSV file.
     """
 
-    def __init__(self, input_filename, output_filename="output.csv"):
+    def __init__(self, input_filename, output_filename="output.csv", data_type="mc"):
         """
         Initialize the analyzer with input and output file names.
         
@@ -22,9 +21,13 @@ class ECALDataAnalyzer:
             Path to the input hipo file.
         output_filename : str
             Path to the initial output CSV file for hits (default is "output.csv").
+        data_type : str
+            Type of data to process, either "mc" or "rec". Determines how certain fields are handled.
         """
         self.input_filename = input_filename
         self.output_filename = output_filename
+        self.data_type = data_type
+        assert(self.data_type in ["mc","rec"])
 
     def read_ecal_data_from_event(self):
         """
@@ -45,15 +48,20 @@ class ECALDataAnalyzer:
 
             # Loop over the events and process the data
             for event_number, event in tqdm(enumerate(reader.file)):
-                ECAL_hits = reader.get_dict("ECAL::hits+")
-                if(len(ECAL_hits)==0): # Skip events without ECAL hits
+                if self.data_type == "mc":
+                    ECAL_hits = reader.get_dict("ECAL::hits+")
+                else:  # "rec" mode
+                    ECAL_hits = reader.get_dict("ECAL::hits")
+
+                if len(ECAL_hits) == 0:  # Skip events without ECAL hits
                     continue
+
                 REC_cal = reader.get_dict("REC::Calorimeter")
                 REC_parts = reader.get_dict("REC::Particle")
 
                 # Apply the rec_pid and pindex determination
                 def get_rec_pid_and_pindex(row):
-                    if row['clusterId'] == -1:
+                    if self.data_type == "rec" or row['clusterId'] == -1:
                         return pd.Series({'rec_pid': -1, 'pindex': -1})
                     else:
                         pindex = REC_cal[REC_cal["index"] == row['clusterId'] - 1]["pindex"].values[0]
@@ -63,6 +71,11 @@ class ECALDataAnalyzer:
                 # Add rec_pid and pindex columns to ECAL_hits DataFrame
                 ECAL_hits[['rec_pid', 'pindex']] = ECAL_hits.apply(get_rec_pid_and_pindex, axis=1)
 
+                # In "rec" mode, set 'otid' and 'pid' to -1
+                if self.data_type == "rec":
+                    ECAL_hits['otid'] = -1
+                    ECAL_hits['pid'] = -1
+
                 # Write the data for each hit to the CSV file
                 for _, hit in ECAL_hits.iterrows():
                     row = [
@@ -70,6 +83,7 @@ class ECALDataAnalyzer:
                         hit['xo'], hit['yo'], hit['zo'], hit['xe'], hit['ye'], hit['ze'], hit['rec_pid'], hit['pindex']
                     ]
                     csv_writer.writerow(row)
+                    
 
     def process_hipo(self):
         """
@@ -79,47 +93,11 @@ class ECALDataAnalyzer:
         self.read_ecal_data_from_event()
         
         # Add the centroid column
-        self.add_centroid_columns(R=20)
-        self.add_cluster_centroid_columns()
-        # Generate intersections CSV
-        self.generate_intersections_csv(n_values=[1, 4, 7], R=20)
+        self.add_centroid_columns(R=6)
         print(f"Processing complete.")
-        
-    def generate_intersections_csv(self, n_values=[1, 4, 7], R=0.5):
-        """
-        Generate an intersections CSV based on the previously created CSV file.
-        
-        Parameters:
-        -----------
-        n_values : list of int
-            The layers to consider for intersection calculations.
-        R : float
-            The radius within which the centroid must lie for the intersection to be recorded.
-        """
-        # Load the hits data from the previously generated CSV
-        df = pd.read_csv(self.output_filename)
-        
-        # Calculate intersections
-        intersection_df = calculate_centroid_and_intersection(df, n_values, R)
-        
-        # Define the new filename for the intersections CSV
-        intersections_filename = self.output_filename.replace(".csv", "-intersections.csv")
-        
-        # Save the intersections DataFrame to the new CSV
-        intersection_df.to_csv(intersections_filename, index=False)
-        
-        print(f"Intersections CSV generated: {intersections_filename}")
-        
-    def add_centroid_columns(self, R=0.5):
-        """
-        Add centroid_x and centroid_y columns to the original CSV file based on the intersection 
-        of strips across layers within the specified layer groups.
 
-        Parameters:
-        -----------
-        R : float
-            The radius within which the centroid must lie for the intersection to be valid.
-        """
+    
+    def add_centroid_columns(self, R=6):
         # Load the hits data from the previously generated CSV
         df = pd.read_csv(self.output_filename)
 
@@ -127,150 +105,280 @@ class ECALDataAnalyzer:
         df['centroid_x'] = 0.0
         df['centroid_y'] = 0.0
 
-        # Group the data by event number
-        grouped = df.groupby(['event_number','sector'])
+        # Initialize one-hot encoded columns for intersection types
+        df['is_3way_same_group'] = 0
+        df['is_2way_same_group'] = 0
+        df['is_3way_cross_group'] = 0
+        df['is_2way_cross_group'] = 0
 
-        # Iterate through each event
-        for (event_number,sector), group in grouped:
+        # Process each event_number and sector group
+        df = self.process_groups(df, R)
+
+        # Process cross-layer group intersections for remaining strips
+        df = self.process_cross_groups(df, R)
+
+        # Save the updated DataFrame back to the original CSV file
+        df.to_csv(self.output_filename, index=False)
+        print(f"Centroid columns and intersection types added, CSV saved: {self.output_filename}")
+
+        
+    def process_groups(self, df, R):
+        """
+        Process each group of event_number and sector in the DataFrame.
+
+        Parameters:
+        -----------
+        df : pd.DataFrame
+            The DataFrame to process.
+        R : float
+            The maximum allowed distance for considering a 3-way intersection as valid.
+
+        Returns:
+        --------
+        pd.DataFrame
+            The updated DataFrame with centroids and intersection flags set.
+        """
+        # Group the data by event number and sector
+        grouped = df.groupby(['event_number', 'sector'])
+
+        # Iterate through each event and sector group
+        for (event_number, sector), group in tqdm(grouped):
             for n_start in [1, 4, 7]:
-                # Select the relevant layers
-                layer_n = group[group['layer'] == n_start]
-                layer_n1 = group[group['layer'] == n_start + 1]
-                layer_n2 = group[group['layer'] == n_start + 2]
+                layer_group = group[group['layer'].isin([n_start, n_start + 1, n_start + 2])]
+                df = self.process_layer_group(df, layer_group, event_number, sector, R)
 
-                for _, strip_n in layer_n.iterrows():
-                    max_energy = 0
-                    best_centroid = np.array([0.0, 0.0])
+        return df
 
-                    # Try to find 3-way intersections first
-                    for _, strip_n1 in layer_n1.iterrows():
-                        for _, strip_n2 in layer_n2.iterrows():
-                            closest_n_n1 = closest_point_between_lines(
-                                np.array([strip_n['xo'], strip_n['yo']]),
-                                np.array([strip_n['xe'], strip_n['ye']]) - np.array([strip_n['xo'], strip_n['yo']]),
-                                np.array([strip_n1['xo'], strip_n1['yo']]),
-                                np.array([strip_n1['xe'], strip_n1['ye']]) - np.array([strip_n1['xo'], strip_n1['yo']])
-                            )
-                            closest_n_n2 = closest_point_between_lines(
-                                np.array([strip_n['xo'], strip_n['yo']]),
-                                np.array([strip_n['xe'], strip_n['ye']]) - np.array([strip_n['xo'], strip_n['yo']]),
-                                np.array([strip_n2['xo'], strip_n2['yo']]),
-                                np.array([strip_n2['xe'], strip_n2['ye']]) - np.array([strip_n2['xo'], strip_n2['yo']])
-                            )
-                            closest_n1_n2 = closest_point_between_lines(
-                                np.array([strip_n1['xo'], strip_n1['yo']]),
-                                np.array([strip_n1['xe'], strip_n1['ye']]) - np.array([strip_n1['xo'], strip_n1['yo']]),
-                                np.array([strip_n2['xo'], strip_n2['yo']]),
-                                np.array([strip_n2['xe'], strip_n2['ye']]) - np.array([strip_n2['xo'], strip_n2['yo']])
-                            )
-
-                            centroid = (closest_n_n1 + closest_n_n2 + closest_n1_n2) / 3
-                            distances = [
-                                np.linalg.norm(closest_n_n1 - centroid),
-                                np.linalg.norm(closest_n_n2 - centroid),
-                                np.linalg.norm(closest_n1_n2 - centroid)
-                            ]
-
-                            if all(distance <= R for distance in distances):
-                                total_energy = strip_n['energy'] + strip_n1['energy'] + strip_n2['energy']
-                                if total_energy > max_energy:
-                                    max_energy = total_energy
-                                    best_centroid = centroid
-
-                    # If no valid 3-way intersection found, try to find 2-way intersections
-                    if max_energy == 0:
-                        for _, strip_n1 in layer_n1.iterrows():
-                            closest_n_n1 = closest_point_between_lines(
-                                np.array([strip_n['xo'], strip_n['yo']]),
-                                np.array([strip_n['xe'], strip_n['ye']]) - np.array([strip_n['xo'], strip_n['yo']]),
-                                np.array([strip_n1['xo'], strip_n1['yo']]),
-                                np.array([strip_n1['xe'], strip_n1['ye']]) - np.array([strip_n1['xo'], strip_n1['yo']])
-                            )
-                            centroid = (closest_n_n1 + np.array([strip_n['xo'], strip_n['yo']]) + np.array([strip_n1['xo'], strip_n1['yo']])) / 3
-                            distance = np.linalg.norm(closest_n_n1 - centroid)
-
-                            if distance <= R:
-                                total_energy = strip_n['energy'] + strip_n1['energy']
-                                if total_energy > max_energy:
-                                    max_energy = total_energy
-                                    best_centroid = centroid
-
-                        for _, strip_n2 in layer_n2.iterrows():
-                            closest_n_n2 = closest_point_between_lines(
-                                np.array([strip_n['xo'], strip_n['yo']]),
-                                np.array([strip_n['xe'], strip_n['ye']]) - np.array([strip_n['xo'], strip_n['yo']]),
-                                np.array([strip_n2['xo'], strip_n2['yo']]),
-                                np.array([strip_n2['xe'], strip_n2['ye']]) - np.array([strip_n2['xo'], strip_n2['yo']])
-                            )
-                            centroid = (closest_n_n2 + np.array([strip_n['xo'], strip_n['yo']]) + np.array([strip_n2['xo'], strip_n2['yo']])) / 3
-                            distance = np.linalg.norm(closest_n_n2 - centroid)
-
-                            if distance <= R:
-                                total_energy = strip_n['energy'] + strip_n2['energy']
-                                if total_energy > max_energy:
-                                    max_energy = total_energy
-                                    best_centroid = centroid
-
-                    # Update the centroid columns in the DataFrame
-                    idx = df[(df['event_number'] == event_number) & (df['id'] == strip_n['id'])].index
-                    df.loc[idx, 'centroid_x'] = best_centroid[0]
-                    df.loc[idx, 'centroid_y'] = best_centroid[1]
-
-        # Save the updated DataFrame back to the original CSV file
-        df.to_csv(self.output_filename, index=False)
-        print(f"Centroid columns added and CSV saved: {self.output_filename}")
-        
-
-        
-    def add_cluster_centroid_columns(self):
+    def process_layer_group(self, df, layer_group, event_number, sector, R):
         """
-        Add cluster_centroid_x and cluster_centroid_y columns to the original CSV file based on 
-        grouping by event_number and otid, and calculating the mean of centroid_x and centroid_y 
-        for the dominant sector.
+        Process each strip within a layer group, searching for 3-way and 2-way intersections.
+
+        Parameters:
+        -----------
+        df : pd.DataFrame
+            The DataFrame being updated.
+        layer_group : pd.DataFrame
+            The subset of data for a specific event_number, sector, and layer group.
+        event_number : int
+            The event number for the group being processed.
+        sector : int
+            The sector number for the group being processed.
+        R : float
+            The maximum allowed distance for considering a 3-way intersection as valid.
+
+        Returns:
+        --------
+        pd.DataFrame
+            The updated DataFrame.
         """
-        # Load the hits data from the previously generated CSV
-        df = pd.read_csv(self.output_filename)
+        for _, strip_x in layer_group.iterrows():
+            if strip_x['centroid_x'] == 0 and strip_x['centroid_y'] == 0:
+                # Search for the most energetic 3-way intersection
+                max_energy, best_centroid, matched_strips = self.find_best_3way_intersection(strip_x, layer_group, R)
+                if max_energy > 0:
+                    df = self.update_centroid(df, event_number, matched_strips, best_centroid, 'is_3way_same_group')
+                    continue
 
-        # Initialize cluster_centroid columns with default values
-        df['cluster_centroid_x'] = 0.0
-        df['cluster_centroid_y'] = 0.0
+                # If no 3-way found, search for the most energetic 2-way intersection within the same layer group
+                max_energy, best_centroid, matched_strips = self.find_best_2way_intersection(strip_x, layer_group)
+                if max_energy > 0:
+                    df = self.update_centroid(df, event_number, matched_strips, best_centroid, 'is_2way_same_group')
 
-        # Group the data by event_number and otid
-        grouped = df.groupby(['event_number', 'otid'])
+        return df
 
-        # Iterate through each group
-        for (event_number, otid), group in grouped:
-            if group.empty:
+    def process_cross_groups(self, df, R):
+        """
+        Process strips that haven't found a centroid within their layer group, searching across groups.
+
+        Parameters:
+        -----------
+        df : pd.DataFrame
+            The DataFrame being updated.
+        R : float
+            The maximum allowed distance for considering a 3-way intersection as valid.
+
+        Returns:
+        --------
+        pd.DataFrame
+            The updated DataFrame.
+        """
+        # Group the data by event number and sector
+        grouped = df.groupby(['event_number', 'sector'])
+
+        # Iterate through each event and sector group
+        for (event_number, sector), group in tqdm(grouped):
+            # Separate the layer groups within the current event and sector
+            layer_groups = {n_start: group[group['layer'].isin([n_start, n_start + 1, n_start + 2])]
+                            for n_start in [1, 4, 7]}
+
+            for n_start, layer_group in layer_groups.items():
+                for _, strip_x in layer_group.iterrows():
+                    if strip_x['centroid_x'] == 0 and strip_x['centroid_y'] == 0:
+                        # Search for 3-way intersections across non-matching layer groups
+                        max_energy, best_centroid, matched_strips = self.find_best_3way_intersection(strip_x, group, R, cross_group=True)
+                        if max_energy > 0:
+                            df = self.update_centroid(df, strip_x['event_number'], matched_strips, best_centroid, 'is_3way_cross_group')
+                            continue
+
+                        # If no 3-way found, search for 2-way intersections across all layer groups
+                        max_energy, best_centroid, matched_strips = self.find_best_2way_intersection(strip_x, group, cross_group=True)
+                        if max_energy > 0:
+                            df = self.update_centroid(df, strip_x['event_number'], matched_strips, best_centroid, 'is_2way_cross_group')
+
+        return df
+    
+
+    def find_best_3way_intersection(self, strip_x, layer_group, R, cross_group=False):
+        """
+        Find the most energetic 3-way intersection for a given strip.
+
+        Parameters:
+        -----------
+        strip_x : pd.Series
+            The strip being processed.
+        layer_group : pd.DataFrame
+            The subset of data within the layer group or cross groups.
+        R : float
+            The maximum allowed distance for considering a 3-way intersection as valid.
+        cross_group : bool
+            If True, search across all layers, not just within the layer group.
+
+        Returns:
+        --------
+        tuple : (max_energy, best_centroid, matched_strips)
+            max_energy : float
+                The energy of the best 3-way intersection found.
+            best_centroid : np.array
+                The centroid coordinates of the best intersection.
+            matched_strips : list
+                The IDs of strips involved in the best intersection.
+        """
+        max_energy = 0
+        best_centroid = np.array([0.0, 0.0])
+        matched_strips = []
+
+        for _, strip_n1 in layer_group.iterrows():
+            for _, strip_n2 in layer_group.iterrows():
+                if strip_n1['id'] == strip_n2['id'] or strip_x['id'] == strip_n1['id'] or strip_x['id'] == strip_n2['id']:
+                    continue
+
+                # Calculate closest points between lines
+                closest_n_n1 = closest_point_between_lines(
+                    np.array([strip_x['xo'], strip_x['yo']]),
+                    np.array([strip_x['xe'], strip_x['ye']]) - np.array([strip_x['xo'], strip_x['yo']]),
+                    np.array([strip_n1['xo'], strip_n1['yo']]),
+                    np.array([strip_n1['xe'], strip_n1['ye']]) - np.array([strip_n1['xo'], strip_n1['yo']])
+                )
+                closest_n_n2 = closest_point_between_lines(
+                    np.array([strip_x['xo'], strip_x['yo']]),
+                    np.array([strip_x['xe'], strip_x['ye']]) - np.array([strip_x['xo'], strip_x['yo']]),
+                    np.array([strip_n2['xo'], strip_n2['yo']]),
+                    np.array([strip_n2['xe'], strip_n2['ye']]) - np.array([strip_n2['xo'], strip_n2['yo']])
+                )
+                closest_n1_n2 = closest_point_between_lines(
+                    np.array([strip_n1['xo'], strip_n1['yo']]),
+                    np.array([strip_n1['xe'], strip_n1['ye']]) - np.array([strip_n1['xo'], strip_n1['yo']]),
+                    np.array([strip_n2['xo'], strip_n2['yo']]),
+                    np.array([strip_n2['xe'], strip_n2['ye']]) - np.array([strip_n2['xo'], strip_n2['yo']])
+                )
+
+                centroid = (closest_n_n1 + closest_n_n2 + closest_n1_n2) / 3
+                distances = [
+                    np.linalg.norm(closest_n_n1 - centroid),
+                    np.linalg.norm(closest_n_n2 - centroid),
+                    np.linalg.norm(closest_n1_n2 - centroid)
+                ]
+
+                if all(distance <= R for distance in distances):
+                    total_energy = strip_x['energy'] + strip_n1['energy'] + strip_n2['energy']
+                    if total_energy > max_energy:
+                        max_energy = total_energy
+                        best_centroid = centroid
+                        matched_strips = [strip_x['id']]
+
+        return max_energy, best_centroid, matched_strips
+
+    def find_best_2way_intersection(self, strip_x, layer_group, cross_group=False):
+        """
+        Find the most energetic 2-way intersection for a given strip.
+
+        Parameters:
+        -----------
+        strip_x : pd.Series
+            The strip being processed.
+        layer_group : pd.DataFrame
+            The subset of data within the layer group or cross groups.
+        cross_group : bool
+            If True, search across all layers, not just within the layer group.
+
+        Returns:
+        --------
+        tuple : (max_energy, best_centroid, matched_strips)
+            max_energy : float
+                The energy of the best 2-way intersection found.
+            best_centroid : np.array
+                The centroid coordinates of the best intersection.
+            matched_strips : list
+                The IDs of strips involved in the best intersection.
+        """
+        max_energy = 0
+        best_centroid = np.array([0.0, 0.0])
+        matched_strips = []
+
+        for _, strip_n1 in layer_group.iterrows():
+            if strip_x['id'] == strip_n1['id']:
                 continue
-            
-            # Determine the most common sector
-            sector_counts = group['sector'].value_counts()
-            dominant_sector = sector_counts.idxmax()
 
-            # Check if the dominant sector has more than 40% of the hits
-            if sector_counts[dominant_sector] > len(group) / 40:
-                dominant_group = group[group['sector'] == dominant_sector]
-            else:
-                dominant_group = group  # No dominant sector, use all hits
+            # Calculate 2-way intersection
+            intersection = line_intersection(
+                np.array([strip_x['xo'], strip_x['yo']]),
+                np.array([strip_x['xe'], strip_x['ye']]) - np.array([strip_x['xo'], strip_x['yo']]),
+                np.array([strip_n1['xo'], strip_n1['yo']]),
+                np.array([strip_n1['xe'], strip_n1['ye']]) - np.array([strip_n1['xo'], strip_n1['yo']])
+            )
 
-            # Calculate the mean of non-zero centroid_x and centroid_y for the dominant group
-            non_zero_centroids = dominant_group[(dominant_group['centroid_x'] != 0) & (dominant_group['centroid_y'] != 0)]
-            if not non_zero_centroids.empty:
-                mean_centroid_x = non_zero_centroids['centroid_x'].mean()
-                mean_centroid_y = non_zero_centroids['centroid_y'].mean()
-            else:
-                mean_centroid_x = 0.0
-                mean_centroid_y = 0.0
+            if intersection is not None:
+                total_energy = strip_x['energy'] + strip_n1['energy']
+                if total_energy > max_energy:
+                    max_energy = total_energy
+                    best_centroid = intersection
+                    matched_strips = [strip_x['id']]
 
-            # Assign the mean centroids to all rows in the group
-            df.loc[(df['event_number'] == event_number) & (df['otid'] == otid), 'cluster_centroid_x'] = mean_centroid_x
-            df.loc[(df['event_number'] == event_number) & (df['otid'] == otid), 'cluster_centroid_y'] = mean_centroid_y
+        return max_energy, best_centroid, matched_strips
 
-        # Save the updated DataFrame back to the original CSV file
-        df.to_csv(self.output_filename, index=False)
-        print(f"Cluster centroid columns added and CSV saved: {self.output_filename}")
-        
-        
+    def update_centroid(self, df, event_number, matched_strips, centroid, intersection_type):
+        """
+        Update the centroid columns and one-hot encoded intersection flags in the DataFrame.
+
+        Parameters:
+        -----------
+        df : pd.DataFrame
+            The DataFrame being updated.
+        event_number : int
+            The event number of the strips being updated.
+        matched_strips : list
+            The IDs of the strips involved in the intersection.
+        centroid : np.array
+            The centroid coordinates to set.
+        intersection_type : str
+            The type of intersection (one of 'is_3way_same_group', 'is_2way_same_group', 'is_3way_cross_group', 'is_2way_cross_group').
+
+        Returns:
+        --------
+        pd.DataFrame
+            The updated DataFrame.
+        """
+        for strip_id in matched_strips:
+            idx = df[(df['event_number'] == event_number) & (df['id'] == strip_id)].index
+            df.loc[idx, 'centroid_x'] = centroid[0]
+            df.loc[idx, 'centroid_y'] = centroid[1]
+            df.loc[idx, intersection_type] = 1
+
+        return df
+
+    
+    
+    
 def closest_point_between_lines(a1, b1, a2, b2):
     """
     Calculate the closest point between two lines in 2D space.
@@ -301,81 +409,39 @@ def closest_point_between_lines(a1, b1, a2, b2):
         closest_point = a1 + lambda_ * b1
         return closest_point
 
-def calculate_centroid_and_intersection(df, n_values, R=0.5):
+
+def line_intersection(a1, b1, a2, b2):
     """
-    Calculate the centroid of closest points between lines in different layers
-    and determine if they form valid intersections.
+    Calculate the intersection point of two line segments in 2D space.
     
     Parameters:
     -----------
-    df : pandas.DataFrame
-        DataFrame containing line data with columns ['xo', 'yo', 'xe', 'ye', 'layer', etc.].
-    n_values : list of int
-        List of layer indices to consider for intersections.
-    R : float
-        Radius within which the centroid must lie for the intersection to be valid.
+    a1, b1 : numpy.ndarray
+        The starting point and direction vector for the first line.
+    a2, b2 : numpy.ndarray
+        The starting point and direction vector for the second line.
         
     Returns:
     --------
-    pandas.DataFrame
-        DataFrame containing valid intersections with centroid positions and associated data.
+    numpy.ndarray or None
+        The intersection point of the two line segments if they intersect, otherwise None.
     """
-    results = []
-
-    grouped = df.groupby('event_number')
-
-    for event, group in grouped:
-        for n in n_values:
-            layer_n = group[group['layer'] == n]
-            layer_n1 = group[group['layer'] == n+1]
-            layer_n2 = group[group['layer'] == n+2]
-
-            for _, lineA in layer_n.iterrows():
-                for _, lineB in layer_n1.iterrows():
-                    for _, lineC in layer_n2.iterrows():
-                        # Calculate the closest points
-                        aA, bA = np.array([lineA['xo'], lineA['yo']]), np.array([lineA['xe'], lineA['ye']]) - np.array([lineA['xo'], lineA['yo']])
-                        aB, bB = np.array([lineB['xo'], lineB['yo']]), np.array([lineB['xe'], lineB['ye']]) - np.array([lineB['xo'], lineB['yo']])
-                        aC, bC = np.array([lineC['xo'], lineC['yo']]), np.array([lineC['xe'], lineC['ye']]) - np.array([lineC['xo'], lineC['yo']])
-                        
-                        closest_AB = closest_point_between_lines(aA, bA, aB, bB)
-                        closest_AC = closest_point_between_lines(aA, bA, aC, bC)
-                        closest_BC = closest_point_between_lines(aB, bB, aC, bC)
-                        
-                        centroid = (closest_AB + closest_AC + closest_BC) / 3
-                        
-                        distances = [
-                            np.linalg.norm(closest_AB - centroid),
-                            np.linalg.norm(closest_AC - centroid),
-                            np.linalg.norm(closest_BC - centroid)
-                        ]
-                        
-                        if all(distance <= R for distance in distances):
-                            mc_pid = lineA['mc_pid'] if lineA['mc_pid'] == lineB['mc_pid'] == lineC['mc_pid'] else -1
-                            otid = lineA['otid'] if lineA['otid'] == lineB['otid'] == lineC['otid'] else -1
-                            sector = lineA['sector'] if lineA['sector'] == lineB['sector'] == lineC['sector'] else -1
-                            rec_pid = lineA['rec_pid'] if lineA['rec_pid'] == lineB['rec_pid'] == lineC['rec_pid'] else -1
-                            pindex = lineA['pindex'] if lineA['pindex'] == lineB['pindex'] == lineC['pindex'] else -1
-                            if sector == -1:  # The cluster must come from intersecting strips in the same sector
-                                continue
-                            results.append({
-                                'event_number': event,
-                                'centroid_x': centroid[0],
-                                'centroid_y': centroid[1],
-                                'time_A'  : lineA['time'],
-                                'time_B'  : lineB['time'],
-                                'time_C'  : lineC['time'],
-                                'energy_A'  : lineA['energy'],
-                                'energy_B'  : lineB['energy'],
-                                'energy_C'  : lineC['energy'],
-                                'layer': 1+(n-1)/3,
-                                'sector': sector,
-                                'mc_pid': mc_pid,
-                                'otid': otid,
-                                'rec_pid': rec_pid,
-                                'pindex': pindex,
-                                'xo_A': lineA['xo'], 'yo_A': lineA['yo'], 'xe_A': lineA['xe'], 'ye_A': lineA['ye'],
-                                'xo_B': lineB['xo'], 'yo_B': lineB['yo'], 'xe_B': lineB['xe'], 'ye_B': lineB['ye'],
-                                'xo_C': lineC['xo'], 'yo_C': lineC['yo'], 'xe_C': lineC['xe'], 'ye_C': lineC['ye'],
-                            })
-    return pd.DataFrame(results)
+    b1 = b1 / np.linalg.norm(b1)
+    b2 = b2 / np.linalg.norm(b2)
+    a_diff = a2 - a1
+    det = b1[0] * b2[1] - b1[1] * b2[0]
+    
+    if np.isclose(det, 0):  # Lines are parallel or coincident
+        return None
+    else:
+        lambda_ = (a_diff[0] * b2[1] - a_diff[1] * b2[0]) / det
+        intersection = a1 + lambda_ * b1
+        
+        # Check if the intersection point lies within the bounding box of both segments
+        if (
+            np.amin([a1[0], a1[0] + b1[0], a2[0], a2[0] + b2[0]]) <= intersection[0] <= np.amax([a1[0], a1[0] + b1[0], a2[0], a2[0] + b2[0]]) and
+            np.amin([a1[1], a1[1] + b1[1], a2[1], a2[1] + b2[1]]) <= intersection[1] <= np.amax([a1[1], a1[1] + b1[1], a2[1], a2[1] + b2[1]])
+        ):
+            return intersection
+        else:
+            return None

@@ -174,8 +174,9 @@ File.open(output_path, 'w') do |file|
         extra_neutrons = []
 
         num_extra_neutrons.times do
-          delta_theta = random_sample(0, 0.1)  # Deviation within 0.1 rad
-          delta_phi = random_sample(0, 0.1)    # Deviation within 0.1 rad
+          delta_theta = deg_to_rad(random_sample(4.0, 2.0)) * (SecureRandom.random_number < 0.5 ? 1 : -1)  # Deviation within ±3-5 degrees
+          delta_phi = deg_to_rad(random_sample(8.0, 4.0)) * (SecureRandom.random_number < 0.5 ? 1 : -1)    # Deviation within ±4-12 degrees
+
           n_p_extra = random_sample(sampled_p, sampled_p * 0.05)
 
           extra_theta = sampled_theta + delta_theta

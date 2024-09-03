@@ -13,7 +13,7 @@ def create_slurm_file(command, slurm_filename, job_name)
 #SBATCH --partition=production
 #SBATCH --mem-per-cpu=1000
 #SBATCH --job-name=#{job_name}
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-task=2
 #SBATCH --time=24:00:00
 #SBATCH --output=#{slurm_filename}.out
 #SBATCH --error=#{slurm_filename}.err
@@ -25,18 +25,23 @@ def create_slurm_file(command, slurm_filename, job_name)
   slurm_filename
 end
 
-options = {}
+options = {
+  gcard: 'gcards/rga_fall2018.gcard',
+  grid: 'grids/simple_grid_neutron.yaml',
+  recon: 'recon/rga_fall2018.yaml'
+}
+
 option_parser = OptionParser.new do |opts|
   opts.banner = "Usage: create_project.rb [options]"
 
   opts.on("-n", "--name PROJECT_NAME", "Project name") do |name|
     options[:project_name] = name
   end
-  opts.on("--mode MODE", "Mode (e+n, p+n, e+p+n, or e+n?)") do |v|
-    if ["e+n", "p+n", "e+p+n", "e+n?"].include?(v)
+  opts.on("--mode MODE", "Mode (e+n, p+n, e+p+n, e+n?, or dis)") do |v|
+    if ["e+n", "p+n", "e+p+n", "e+n?", "dis"].include?(v)
       options[:mode] = v
     else
-      puts "Invalid mode. Allowed values are 'e+n', 'p+n', 'e+p+n', or 'e+n?'."
+      puts "Invalid mode. Allowed values are 'e+n', 'p+n', 'e+p+n', 'e+n?', or 'dis'."
       exit
     end
   end
@@ -79,27 +84,6 @@ if options[:project_name].nil? || options[:grid].nil? || options[:gcard].nil? ||
   exit
 end
 
-# Read the .gcard file
-gcard_path = options[:gcard]
-unless File.exist?(gcard_path)
-  puts "Gcard file does not exist: #{gcard_path}"
-  exit
-end
-
-# Read the grid .yaml file
-grid_yaml_path = options[:grid]
-unless File.exist?(grid_yaml_path)
-  puts "Grid YAML file does not exist: #{grid_yaml_path}"
-  exit
-end
-
-# Read the recon .yaml file
-recon_yaml_path = options[:recon]
-unless File.exist?(recon_yaml_path)
-  puts "Recon YAML file does not exist: #{recon_yaml_path}"
-  exit
-end
-
 # Get current date and time
 current_time = Time.now
 timestamp = current_time.strftime("%m.%d.%Y.%H.%M")
@@ -135,45 +119,114 @@ else
   puts "Directory #{project_dir} and subdirectories created successfully."
 end
 
-# Read the YAML configuration file
-config = YAML.load_file(options[:grid])
 
-particle = config['particle']
-nevents = config['Nevents'].to_i
-p_min = config['P']['min']
-p_max = config['P']['max']
-p_step = config['P']['step']
-theta_min = config['Theta']['min']
-theta_max = config['Theta']['max']
-theta_step = config['Theta']['step']
-phi_min = config['Phi']['min']
-phi_max = config['Phi']['max']
-phi_step = config['Phi']['step']
-spread_p = config['SPREAD_P']
+# Store Slurm job IDs
+slurm_job_ids = []
 
-# Generate values and call generate_gcard_gun.rb
-output_dir = File.join(project_dir, 'lund')
-FileUtils.mkdir_p(output_dir)
+# If the mode is "dis", prompt for the number of events and batches
+if options[:mode] == "dis"
+  print "Enter the number of events: "
+  nevents = gets.chomp.to_i
 
-(p_min..p_max).step(p_step).each do |p|
-  (theta_min..theta_max).step(theta_step).each do |theta|
-    (phi_min..phi_max).step(phi_step).each do |phi|
-      system("ruby ./tools/generate_lund_events.rb --output #{output_dir} --mode #{options[:mode]} --nevents #{nevents} --beam_p \"#{particle}, #{p}*GeV, #{theta}*deg, #{phi}*deg\" --spread_p \"#{spread_p}\"")
+  print "Enter the number of batches: "
+  num_batches = gets.chomp.to_i
+
+  nevents_per_batch = (nevents / num_batches.to_f).ceil
+
+  # Change to the project directory
+  Dir.chdir(project_dir) do
+    system("mkdir eventfiles")
+    system("clasdis --trig #{nevents} --nmax #{nevents_per_batch}")
+    # Move all .dat files from eventfiles to lund and delete eventfiles directory
+    dat_files = Dir.glob("eventfiles/*.dat")
+    dat_files.each do |dat_file|
+      FileUtils.mv(dat_file, "lund/")
     end
+    FileUtils.rm_rf("eventfiles")
+  end
+
+  # Create slurm files for the .dat files in the lund directory
+  Dir.glob("#{project_dir}/lund/*.dat").each do |file_lund|
+    file_gemc = file_lund.gsub('/lund/', '/gemc/').gsub('.dat','.hipo')
+    file_cooked = file_lund.gsub('/lund/', '/cooked/').gsub('.dat','.hipo')
+    file_dst   = file_lund.gsub('/lund/', '/dst/').gsub('.dat','.hipo')
+    file_train   = file_lund.gsub('/lund/', '/training/').gsub('.dat','.csv')
+    file_h5    = file_lund.gsub('/lund/', '/training/').gsub('.dat','.h5')
+    file_slurm = file_lund.gsub('/lund/','/slurm/').gsub('.dat','.slurm')
+    
+    slurm_command = "bash ./tools/pipeline.sh #{options[:gcard]} #{file_lund} #{file_gemc} #{file_cooked} #{file_dst} #{file_train} #{file_h5} #{options[:recon]}"
+    create_slurm_file(slurm_command, file_slurm, options[:project_name])
+    job_id = `sbatch #{file_slurm}`.strip.split.last
+    slurm_job_ids << job_id
+  end
+else
+  # Read the YAML configuration file
+  config = YAML.load_file(options[:grid])
+
+  particle = config['particle']
+  nevents = config['Nevents'].to_i
+  p_min = config['P']['min']
+  p_max = config['P']['max']
+  p_step = config['P']['step']
+  theta_min = config['Theta']['min']
+  theta_max = config['Theta']['max']
+  theta_step = config['Theta']['step']
+  phi_min = config['Phi']['min']
+  phi_max = config['Phi']['max']
+  phi_step = config['Phi']['step']
+  spread_p = config['SPREAD_P']
+
+  # Generate values and call generate_gcard_gun.rb
+  output_dir = File.join(project_dir, 'lund')
+  FileUtils.mkdir_p(output_dir)
+
+  (p_min..p_max).step(p_step).each do |p|
+    (theta_min..theta_max).step(theta_step).each do |theta|
+      (phi_min..phi_max).step(phi_step).each do |phi|
+        system("ruby ./tools/generate_lund_events.rb --output #{output_dir} --mode #{options[:mode]} --nevents #{nevents} --beam_p \"#{particle}, #{p}*GeV, #{theta}*deg, #{phi}*deg\" --spread_p \"#{spread_p}\"")
+      end
+    end
+  end
+
+  # Print all the files in the output_dir
+  Dir.glob(File.join(output_dir, '**', '*')).each do |file|
+    file_lund = file
+    file_gemc = file_lund.gsub('/lund/', '/gemc/').gsub('.lund','.hipo')
+    file_cooked = file_lund.gsub('/lund/', '/cooked/').gsub('.lund','.hipo')
+    file_dst   = file_lund.gsub('/lund/', '/dst/').gsub('.lund','.hipo')
+    file_train   = file_lund.gsub('/lund/', '/training/').gsub('.lund','.csv')
+    file_h5    = file_lund.gsub('/lund/', '/training/').gsub('.lund','.h5')
+    file_slurm = file_lund.gsub('/lund/','/slurm/').gsub('.lund','.slurm')
+      
+    puts "Generated slurm file: #{file_slurm}"
+    slurm_command = "bash ./tools/pipeline.sh #{options[:gcard]} #{file_lund} #{file_gemc} #{file_cooked} #{file_dst} #{file_train} #{file_h5} #{options[:recon]}"
+    create_slurm_file(slurm_command, file_slurm, options[:project_name])
+    job_id = `sbatch #{file_slurm}`.strip.split.last
+    slurm_job_ids << job_id
   end
 end
 
-# Print all the files in the output_dir
-Dir.glob(File.join(output_dir, '**', '*')).each do |file|
-  file_lund = file
-  file_gemc = file_lund.gsub('/lund/', '/gemc/').gsub('.lund','.hipo')
-  file_cooked = file_lund.gsub('/lund/', '/cooked/').gsub('.lund','.hipo')
-  file_dst   = file_lund.gsub('/lund/', '/dst/').gsub('.lund','.hipo')
-  file_train   = file_lund.gsub('/lund/', '/training/').gsub('.lund','.csv')
-  file_slurm = file_lund.gsub('/lund/','/slurm/').gsub('.lund','.slurm')
-    
-  puts "Generated slurm file: #{file_slurm}"
-  slurm_command = "bash ./tools/pipeline.sh #{gcard_path} #{file_lund} #{file_gemc} #{file_cooked} #{file_dst} #{file_train} #{recon_yaml_path}"
-  create_slurm_file(slurm_command, file_slurm, options[:project_name])
-  system("sbatch #{file_slurm}")
-end
+# Create a Slurm file for combining .h5 files
+h5_dir = File.join(project_dir, 'training')
+combine_command = "python3 tools/combine_h5.py #{h5_dir}"
+combine_slurm_filename = File.join(project_dir, "slurm/combine_h5.slurm")
+
+combine_slurm_content = <<-SLURM
+#!/bin/bash
+#SBATCH --account=clas12
+#SBATCH --partition=production
+#SBATCH --mem-per-cpu=2000
+#SBATCH --job-name=combine_h5
+#SBATCH --cpus-per-task=1
+#SBATCH --time=2:00:00
+#SBATCH --output=#{combine_slurm_filename}.out
+#SBATCH --error=#{combine_slurm_filename}.err
+#SBATCH --dependency=afterok:#{slurm_job_ids.join(':')}
+
+#{combine_command}
+SLURM
+
+File.open(combine_slurm_filename, "w") { |file| file.write(combine_slurm_content) }
+
+# Submit the combine job after all other jobs
+system("sbatch #{combine_slurm_filename}")

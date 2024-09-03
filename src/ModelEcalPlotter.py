@@ -43,8 +43,6 @@ class ModelEcalPlotter:
         self.event_yo = self.event["yo"].values
         self.event_xe = self.event["xe"].values
         self.event_ye = self.event["ye"].values
-        self.pred_centroid_x = self.event["pred_centroid_x"].values
-        self.pred_centroid_y = self.event["pred_centroid_y"].values
         self.N_hits = len(self.event)
         self.xc_range = (np.amin(self.xc) - 1, np.amax(self.xc) + 1)
         self.yc_range = (np.amin(self.yc) - 1, np.amax(self.yc) + 1)
@@ -130,10 +128,10 @@ class ModelEcalPlotter:
         ax.legend(frameon=True, ncols=2, bbox_to_anchor=(0.5, 1), loc='lower center')
         ax.set_xlabel("Latent X Coordinate")
         ax.set_ylabel("Latent Y Coordinate")
-        #ax.set_xlim(self.xc_range[0], self.xc_range[1])
-        #ax.set_ylim(self.yc_range[0], self.yc_range[1])
-        ax.set_xlim(-3,3)
-        ax.set_ylim(-3,3)
+        ax.set_xlim(self.xc_range[0], self.xc_range[1])
+        ax.set_ylim(self.yc_range[0], self.yc_range[1])
+        #ax.set_xlim(-3,3)
+        #ax.set_ylim(-3,3)
         return ax
 
     def plot_rec_peaks(self, ax=None):
@@ -177,10 +175,8 @@ class ModelEcalPlotter:
             ihit = np.where((self.is_cluster_leader == 1) & (self.cluster_ids == cluster_id))[0][0]
             leader_xo, leader_yo = self.event_xo[ihit], self.event_yo[ihit]
             leader_xe, leader_ye = self.event_xe[ihit], self.event_ye[ihit]
-            leader_centroid_x, leader_centroid_y = self.pred_centroid_x[ihit], self.pred_centroid_y[ihit]
             color = self.colors[ic % len(self.colors)]
             ax.scatter([leader_xo, leader_xe], [leader_yo, leader_ye], color=color, s=150, edgecolor="k", hatch="...", marker="s")
-            ax.scatter([leader_centroid_x],[leader_centroid_y], color=color, s=150, edgecolor="k", hatch="...", marker="^")
         ax.legend(frameon=True, ncols=2, bbox_to_anchor=(0.5, -0.15), loc='upper center')
         ax.set_xlabel("ECAL::peaks (X)")
         ax.set_ylabel("ECAL::peaks (Y)")
@@ -212,10 +208,10 @@ class ModelEcalPlotter:
         ax.legend(frameon=True, ncols=2, bbox_to_anchor=(0.5, -0.15), loc='upper center')
         ax.set_xlabel("Latent X Coordinate")
         ax.set_ylabel("Latent Y Coordinate")
-        #ax.set_xlim(self.xc_range[0], self.xc_range[1])
-        #ax.set_ylim(self.yc_range[0], self.yc_range[1])
-        ax.set_xlim(-3,3)
-        ax.set_ylim(-3,3)
+        ax.set_xlim(self.xc_range[0], self.xc_range[1])
+        ax.set_ylim(self.yc_range[0], self.yc_range[1])
+        #ax.set_xlim(-3,3)
+        #ax.set_ylim(-3,3)
         return ax
 
     def plot_beta_histogram(self, ax=None):
