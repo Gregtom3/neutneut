@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 from PIL import Image
 from collections import defaultdict
+import tensorflow as tf
 
 def create_output_directory(base_dir="./out"):
     # Get the current date in MM_DD_YYYY format
@@ -68,3 +69,13 @@ def create_gif_from_pngs(outdir, gif_prefix="output", duration=500):
         images[0].save(gif_path, save_all=True, append_images=images[1:], duration=duration, loop=0)
         
         print(f"GIF saved at: {gif_path}")
+        
+        
+def check_gpus():
+    print("Tensorflow Version ==",tf.__version__)
+    gpus = tf.config.list_physical_devices('GPU')
+    if len(gpus)==0:
+        print("*** NO GPUS FOUND ***")
+    else:
+        for gpu in gpus:
+            print(f"Device Name: {gpu.name}, Device Type: {gpu.device_type}")

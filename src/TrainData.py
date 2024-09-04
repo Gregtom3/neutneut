@@ -362,23 +362,44 @@ class TrainData:
     
     
     
-def load_train_test_data(directory):
+def load_train_test_data(directory, batch_size, num_train_batches=None, num_test_batches=None):
     # Define filenames
     train_filename = os.path.join(directory, 'dataset_train.h5')
     test_filename = os.path.join(directory, 'dataset_test.h5')
 
-    # Load testing data
-    with h5py.File(test_filename, 'r') as hf:
-        test_X = hf['test_X'][:]
-        test_y = hf['test_y'][:]
-        test_misc = hf['test_misc'][:]
-    print(f"Testing data loaded from {test_filename}")
+    # Helper function to load each component (X, y, misc) in batches
+    def load_data_component_in_batches(h5_filename, batch_size, dataset_name, num_batches=None):
+        def generator():
+            with h5py.File(h5_filename, 'r') as hf:
+                dataset = hf[dataset_name]
+                num_samples = len(dataset)
+                max_batches = num_batches if num_batches else num_samples // batch_size
+                for i in range(0, num_samples, batch_size):
+                    if i // batch_size >= max_batches:
+                        break
+                    yield dataset[i:i+batch_size]
+        
+        if "_X" in dataset_name:
+            shape = (None, 100, 29)
+        elif "_y" in dataset_name:
+            shape = (None, 100, 1)
+        else:
+            shape = (None, 100, 3)
+        
+        dataset = tf.data.Dataset.from_generator(
+            generator,
+            output_signature=tf.TensorSpec(shape=shape, dtype=tf.float32)
+        )
+        return dataset
 
-    # Load training data
-    with h5py.File(train_filename, 'r') as hf:
-        train_X = hf['train_X'][:]
-        train_y = hf['train_y'][:]
-        train_misc = hf['train_misc'][:]
-    print(f"Training data loaded from {train_filename}")
+    # Load training components with optional limit on number of batches
+    train_X_data = load_data_component_in_batches(train_filename, batch_size, 'train_X', num_train_batches)
+    train_y_data = load_data_component_in_batches(train_filename, batch_size, 'train_y', num_train_batches)
+    train_misc_data = load_data_component_in_batches(train_filename, batch_size, 'train_misc', num_train_batches)
 
-    return (train_X, train_y, train_misc), (test_X, test_y, test_misc)
+    # Load testing components with optional limit on number of batches
+    test_X_data = load_data_component_in_batches(test_filename, batch_size, 'test_X', num_test_batches)
+    test_y_data = load_data_component_in_batches(test_filename, batch_size, 'test_y', num_test_batches)
+    test_misc_data = load_data_component_in_batches(test_filename, batch_size, 'test_misc', num_test_batches)
+
+    return (train_X_data, train_y_data, train_misc_data), (test_X_data, test_y_data, test_misc_data)

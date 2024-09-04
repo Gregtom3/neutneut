@@ -50,10 +50,8 @@ def make_gravnet_model(K=20,N_feat=23,N_grav_layers=2,N_neighbors=10, N_filters=
     x = Concatenate(name='concat1')(feat)
     
     x = Dense(32, activation='elu',name='Dense3')(x)
-    out_beta=Dense(1,activation='sigmoid',name='out_beta')(x)
-    out_beta = Lambda(lambda x: tf.clip_by_value(x, 0.00001, 0.99999), name='clip_out_beta')(out_beta)
-    out_latent=Dense(2,name='out_latent')(x)
-    #out_latent = Lambda(lambda x: x * 10, name='scale_out_latent')(out_latent)
+    out_beta = Dense(1, activation='sigmoid', name='out_beta')(x)
+    out_latent = Dense(2, name='out_latent')(x)
     out=concatenate([out_beta, out_latent])
 
     model=keras.Model(inputs=inputs, outputs=out)

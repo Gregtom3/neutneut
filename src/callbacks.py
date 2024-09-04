@@ -51,9 +51,9 @@ class CyclicalLearningRate(tf.keras.callbacks.Callback):
 
 
 class LossPlotCallback(tf.keras.callbacks.Callback):
-    def __init__(self, save_path):
+    def __init__(self, save_dir):
         super(LossPlotCallback, self).__init__()
-        self.save_path = save_path
+        self.save_dir = save_dir
 
     def on_train_end(self, logs=None):
         # Extract the metric values
@@ -96,6 +96,55 @@ class LossPlotCallback(tf.keras.callbacks.Callback):
         plt.tight_layout()
 
         # Save the figure
-        plt.savefig(self.save_path)
+        fig_path = f"{self.save_dir}/loss.png"
+        plt.savefig(fig_path)
         plt.close()
-        print(f"Training loss plots saved to {self.save_path}")
+        print(f"Training loss plots saved to {fig_path}")
+        
+        # Create a DataFrame to store the loss values for each epoch
+        loss_data = {
+            'Epoch': list(epochs),
+            'Train Loss': train_loss,
+            'Val Loss': val_loss,
+            'Train Attractive Loss': train_attractive_loss,
+            'Val Attractive Loss': val_attractive_loss,
+            'Train Repulsive Loss': train_repulsive_loss,
+            'Val Repulsive Loss': val_repulsive_loss,
+            'Train Coward Loss': train_coward_loss,
+            'Val Coward Loss': val_coward_loss
+        }
+
+        df_loss = pd.DataFrame(loss_data)
+
+        # Save the DataFrame to CSV
+        csv_path = f"{self.save_dir}/loss.csv"
+        df_loss.to_csv(csv_path, index=False)
+        print(f"Training loss CSV saved to {csv_path}")
+        
+class PrintBatchMetricsCallback(tf.keras.callbacks.Callback):
+    def __init__(self, num_train_batches=None, num_epochs=None):
+        super().__init__()
+        self.num_train_batches = num_train_batches
+        self.num_epochs = num_epochs
+        self.current_epoch = 0
+        
+    def on_epoch_begin(self, epoch, logs=None):
+        self.current_epoch = epoch + 1  # Store current epoch, epochs start at 0 in Keras
+    
+    def on_batch_end(self, batch, logs=None):
+        # Only print every 1/100th of the total number of batches
+        #if self.num_train_batches is not None and batch % max(1, self.num_train_batches // 1) == 0:
+        if True:
+            # Get the metrics from the logs dictionary and print them
+            loss = logs.get('loss')
+            attractive_loss = logs.get('attractive_loss')
+            repulsive_loss = logs.get('repulsive_loss')
+            coward_loss = logs.get('coward_loss')
+            noise_loss = logs.get('noise_loss')
+
+            # Print metrics with epoch and batch information, including total batches
+            print(f"Epoch {self.current_epoch}/{self.num_epochs}, Batch {batch+1}/{self.num_train_batches} - "
+                  f"Loss: {loss:.4f}, Attractive: {attractive_loss:.4f}, "
+                  f"Repulsive: {repulsive_loss:.4f}, Coward: {coward_loss:.4f}, Noise: {noise_loss:.4f}", flush=True)
+
+            

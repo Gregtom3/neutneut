@@ -166,7 +166,7 @@ def create_and_submit_slurm_script(config_subdir, config_idx)
   slurm_script = <<~SLURM
     #!/bin/bash
     #SBATCH --account=clas12
-    #SBATCH --partition=scavenger_gpu
+    #SBATCH --partition=gpu
     #SBATCH --mem-per-cpu=4000
     #SBATCH --job-name=neutneut_episode_#{File.basename(File.dirname(config_subdir))}_config_#{format('%04d', config_idx)}
     #SBATCH --cpus-per-task=4
@@ -174,8 +174,12 @@ def create_and_submit_slurm_script(config_subdir, config_idx)
     #SBATCH --gres=gpu:TitanRTX:1
     #SBATCH --output=#{config_subdir}/slurm.out
     #SBATCH --error=#{config_subdir}/slurm.err
-
-    python3 ./analysis/neutron_ml/train_model.py #{config_subdir}/config.yaml
+    
+    source ~/.bashrc
+    module purge
+    module load python
+    source /work/clas12/users/gmat/venv/tensorflow_env/bin/activate
+    python ./analysis/neutron_ml/train_model.py #{config_subdir}/config.yaml
   SLURM
 
   slurm_path = File.join(config_subdir, "slurm.slurm")

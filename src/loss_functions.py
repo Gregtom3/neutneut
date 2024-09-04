@@ -1,9 +1,16 @@
 # Pulled from (https://github.com/object-condensation/object_condensation/blob/main/src/object_condensation/tensorflow/losses.py)
 # Needed to change the `tf.math.maximum` 0 -> 0.0 to fix an error from Tensorflow
 import tensorflow as tf
-
+import os
 def check_for_nans(tensor, message):
     tf.debugging.check_numerics(tensor, message)
+
+# Added 9/4/2024
+# Gradient of tf.norm() has the sum**2 in the denominator
+# This may cause overflow if sum**2 is near 0
+# Define safe norm function to counter this
+def safe_norm(x, epsilon=1e-12, axis=None):
+    return tf.sqrt(tf.reduce_sum(x ** 2, axis=axis) + epsilon)
 
 def condensation_loss(
     *,
@@ -22,9 +29,11 @@ def condensation_loss(
     q_min = tf.cast(q_min, tf.float32)
     object_id = tf.reshape(object_id, (-1,))
     beta = tf.cast(beta, tf.float32)
+    #beta = tf.clip_by_value(beta,0.001,0.999)
     x = tf.cast(x, tf.float32)
-    weights = tf.cast(weights, tf.float32)
+    #x = tf.clip_by_value(x,-0.0001,0.0001)
     
+    weights = tf.cast(weights, tf.float32)
     check_for_nans(beta, "NaN detected after beta casting and clipping")
     check_for_nans(x, "NaN detected after x casting")
     
@@ -46,7 +55,8 @@ def condensation_loss(
     check_for_nans(q_k, "NaN detected after gathering q_k")
     check_for_nans(x_k, "NaN detected after gathering x_k")
     
-    dist_j_k = tf.norm(x[None, :, :] - x_k[:, None, :], axis=-1)
+    dist_j_k = safe_norm(x[None, :, :] - x_k[:, None, :], axis=-1)
+    
     check_for_nans(dist_j_k, "NaN detected after calculating dist_j_k")
 
     v_att_k = tf.math.divide_no_nan(
@@ -60,6 +70,8 @@ def condensation_loss(
         ),
         tf.reduce_sum(mask_att, axis=0) + 1e-9,
     )
+    
+    
     check_for_nans(v_att_k, "NaN detected after calculating v_att_k")
 
     v_att = tf.math.divide_no_nan(
@@ -98,6 +110,22 @@ def condensation_loss(
         tf.reduce_sum(tf.cast(object_id <= noise_threshold, tf.float32)),
     )
     check_for_nans(noise_loss, "NaN detected after calculating noise_loss")
+    
+#     return {
+#         "attractive":         tf.reduce_sum(
+#             #q_k
+#             #* tf.transpose(q)
+#             #* tf.transpose(mask_rep)
+#             #* tf.math.maximum(0.00001, 1.0 - dist_j_k),
+#             #tf.math.maximum(0.00001, 1.0 - dist_j_k),
+#             dist_j_k,
+#             axis=0,
+#         ),
+        
+#         "repulsive": 0.1,
+#         "coward": 0.1,
+#         "noise": 0.1,
+#     }
 
     return {
         "attractive": v_att,
@@ -124,7 +152,7 @@ def calculate_losses(y_true, y_pred, q_min):
 
 
 class CustomLoss(tf.keras.losses.Loss):
-    def __init__(self, q_min=0.1, reduction=tf.keras.losses.Reduction.SUM, name="custom_loss"):
+    def __init__(self, q_min=0.1, reduction=tf.keras.losses.Reduction.NONE, name="custom_loss"):
         super(CustomLoss, self).__init__(reduction=reduction, name=name)
         self.q_min = q_min
 

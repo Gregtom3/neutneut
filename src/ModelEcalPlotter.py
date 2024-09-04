@@ -128,8 +128,11 @@ class ModelEcalPlotter:
         ax.legend(frameon=True, ncols=2, bbox_to_anchor=(0.5, 1), loc='lower center')
         ax.set_xlabel("Latent X Coordinate")
         ax.set_ylabel("Latent Y Coordinate")
-        ax.set_xlim(self.xc_range[0], self.xc_range[1])
-        ax.set_ylim(self.yc_range[0], self.yc_range[1])
+        try:
+            ax.set_xlim(self.xc_range[0], self.xc_range[1])
+            ax.set_ylim(self.yc_range[0], self.yc_range[1])
+        except:
+            pass
         #ax.set_xlim(-3,3)
         #ax.set_ylim(-3,3)
         return ax
@@ -208,8 +211,11 @@ class ModelEcalPlotter:
         ax.legend(frameon=True, ncols=2, bbox_to_anchor=(0.5, -0.15), loc='upper center')
         ax.set_xlabel("Latent X Coordinate")
         ax.set_ylabel("Latent Y Coordinate")
-        ax.set_xlim(self.xc_range[0], self.xc_range[1])
-        ax.set_ylim(self.yc_range[0], self.yc_range[1])
+        try:
+            ax.set_xlim(self.xc_range[0], self.xc_range[1])
+            ax.set_ylim(self.yc_range[0], self.yc_range[1])
+        except:
+            pass
         #ax.set_xlim(-3,3)
         #ax.set_ylim(-3,3)
         return ax
