@@ -179,7 +179,7 @@ def create_and_submit_slurm_script(config_subdir, config_idx)
     module purge
     module load python
     source /work/clas12/users/gmat/venv/tensorflow_env/bin/activate
-    python ./analysis/neutron_ml/train_model.py #{config_subdir}/config.yaml
+    python ./tools/train_model.py #{config_subdir}/config.yaml
   SLURM
 
   slurm_path = File.join(config_subdir, "slurm.slurm")

@@ -11,9 +11,9 @@ def create_slurm_file(command, slurm_filename, job_name)
 #!/bin/bash
 #SBATCH --account=clas12
 #SBATCH --partition=production
-#SBATCH --mem-per-cpu=1000
+#SBATCH --mem-per-cpu=2000
 #SBATCH --job-name=#{job_name}
-#SBATCH --cpus-per-task=2
+#SBATCH --cpus-per-task=1
 #SBATCH --time=24:00:00
 #SBATCH --output=#{slurm_filename}.out
 #SBATCH --error=#{slurm_filename}.err

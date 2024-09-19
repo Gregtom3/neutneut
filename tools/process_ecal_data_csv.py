@@ -10,7 +10,7 @@ def main(input_filename, output_csv_filename, data_type):
     ana = ECALDataAnalyzer(input_filename=input_filename, output_filename=output_csv_filename, data_type=data_type)
 
     # Process the HIPO file and generate the output CSV
-    ana.read_ecal_data_from_event()
+    ana.process_hipo()
 
 if __name__ == "__main__":
     if len(sys.argv) != 4:
