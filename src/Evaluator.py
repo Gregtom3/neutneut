@@ -47,11 +47,11 @@ class Evaluator:
     
     
     
-    def get_event_dataframe(self, event_number=None):
-        if event_number is None:
-            event_number = random.choice(self.dataframe['event'].unique())
-            print("Randomly generated event number =",event_number)
-        return self.dataframe[self.dataframe['event'] == event_number]
+    def get_event_dataframe(self, event=None):
+        if event is None:
+            event = random.choice(self.dataframe['event'].unique())
+            print("Randomly generated event number =",event)
+        return self.dataframe[self.dataframe['event'] == event]
     
     
     
@@ -146,51 +146,6 @@ class Evaluator:
                 # Increment cluster_id for the next cluster
                 cluster_id += 1
                 
-    def calculate_calorimeter_clusters(self, option):
-        if option not in ["with_clustering", "with_recon", "with_truth"]:
-            raise ValueError("Option must be 'with_clustering', 'with_recon', or 'with_truth'.")
-        
-        indexing_var = {'with_clustering': 'cluster_id', 'with_recon': 'pindex', 'with_truth': 'unique_otid'}[option]
-        clusterX_col = f"calorimeter_clusterX_{option}"
-        clusterY_col = f"calorimeter_clusterY_{option}"
-        
-        self.dataframe[clusterX_col] = 0.0
-        self.dataframe[clusterY_col] = 0.0
-        
-        for event_id, event_data in self.dataframe.groupby('event'):
-            for idx_value, group in event_data.groupby(indexing_var):
-                if idx_value == -1:
-                    continue
-                
-                sector_counts = group['sector'].value_counts()
-                most_common_sector = sector_counts.idxmax()
-                
-                if sector_counts[most_common_sector] == 1:
-                    continue
-                
-                priority_columns = [
-                    'is_3way_same_group',
-                    'is_2way_same_group',
-                    'is_3way_cross_group',
-                    'is_2way_cross_group'
-                ]
-                
-                found = False
-                for col in priority_columns:
-                    filtered_group = group[(group['sector'] == most_common_sector) & (group[col] == 1)]
-                    if not filtered_group.empty:
-                        mean_centroid_x = filtered_group['centroid_x'].mean()
-                        mean_centroid_y = filtered_group['centroid_y'].mean()
-                        self.dataframe.loc[group.index, clusterX_col] = mean_centroid_x
-                        self.dataframe.loc[group.index, clusterY_col] = mean_centroid_y
-                        found = True
-                        break
-                
-                if not found:
-                    self.dataframe.loc[group.index, clusterX_col] = 0.0
-                    self.dataframe.loc[group.index, clusterY_col] = 0.0
-                    
-
     def to_cluster_dataframe(self):
         """
         Converts the Evaluator dataframe into the desired structure with unscaled values.
@@ -225,15 +180,12 @@ class Evaluator:
         
         # Create a new dataframe with the specified columns
         columns = [
-            'event_number', 'id', 'mc_pid', 'otid', 'sector', 'layer', 'energy',
+            'event', 'id', 'mc_pid', 'unique_otid', 'sector', 'layer', 'energy',
             'time', 'xo', 'yo', 'zo', 'xe', 'ye', 'ze', 'rec_pid', 'pindex',
             'centroid_x', 'centroid_y', 'centroid_z', 'is_3way_same_group',
             'is_2way_same_group', 'is_3way_cross_group', 'is_2way_cross_group'
         ]
 
-        # Rename columns
-        df.rename(columns={'event': 'event_number', 'unique_otid': 'otid'}, inplace=True)
-        
         # Set 'id' column to 0
         df['id'] = 0
         

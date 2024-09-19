@@ -28,7 +28,7 @@ class ECALClusterAnalyzer:
         shutil.copy2(self.original_hipofile, self.new_hipofile)
         self.clustering_variable = clustering_variable
         self.clusters_df = pd.DataFrame({
-            'event_number': [0],
+            'event': [0],
             'status': [0],
             'sector': [0],
             'layer': [0],
@@ -150,7 +150,7 @@ class ECALClusterAnalyzer:
         # If no matching priority rows are found, return None
         return None
 
-    def create_cluster_from_group(self, group_df, event_number):
+    def create_cluster_from_group(self, group_df, event):
         """
         Create clusters for each layer group within a group of strips with the same clustering variable.
         Append the resulting cluster information to the clusters DataFrame.
@@ -166,7 +166,7 @@ class ECALClusterAnalyzer:
             cluster = self.create_cluster_from_layergroup(layergroup_df)
             
             if cluster:
-                cluster['event_number'] = event_number
+                cluster['event'] = event
                 # Convert cluster to a DataFrame for concatenation
                 cluster_df = pd.DataFrame([cluster])
                 # Concatenate the new cluster_df to self.clusters_df
@@ -199,19 +199,19 @@ class ECALClusterAnalyzer:
             dominant_sector_group = group[group['sector'] == dominant_sector]
 
             # Extract the event number (assuming it's the same for the entire group)
-            event_number = group['event_number'].iloc[0]
+            event = group['event'].iloc[0]
 
             # Create clusters from the dominant sector group
-            self.create_cluster_from_group(dominant_sector_group, event_number)
+            self.create_cluster_from_group(dominant_sector_group, event)
         
     def create_clusters(self):
         """
-        Group the event data by 'event_number' and process each event one by one.
+        Group the event data by 'event' and process each event one by one.
         Returns the full DataFrame with all clusters.
         """
-        events = self.event_df.groupby('event_number')
+        events = self.event_df.groupby('event')
 
-        for event_number, event_group in events:
+        for event, event_group in events:
             self.create_clusters_from_event(event_group)
         
         return self.clusters_df
@@ -254,8 +254,8 @@ class ECALClusterAnalyzer:
         file.open()
 
         # Iterate through events and write data to the hipo file
-        for event_number, event in enumerate(file):
-            event_group = self.clusters_df[self.clusters_df['event_number'] == event_number]
+        for event, _ in enumerate(file):
+            event_group = self.clusters_df[self.clusters_df['event'] == event]
 
             # Cluster data
             cluster_data = [
@@ -289,8 +289,8 @@ class ECALClusterAnalyzer:
         file.newTree(moments_bank, moments_names_and_types)
         file.open()
         # Iterate through events and write data to the hipo file
-        for event_number, event in enumerate(file):
-            event_group = self.clusters_df[self.clusters_df['event_number'] == event_number]
+        for event, _ in enumerate(file):
+            event_group = self.clusters_df[self.clusters_df['event'] == event]
 
             # Moments data, all zeros, with the same length as the cluster data entries
             num_entries = len(event_group["uid"])
@@ -319,8 +319,8 @@ class ECALClusterAnalyzer:
         file.newTree(calib_bank, calib_names_and_types)
         file.open()
         # Iterate through events and write data to the hipo file
-        for event_number, event in enumerate(file):
-            event_group = self.clusters_df[self.clusters_df['event_number'] == event_number]
+        for event, _ in enumerate(file):
+            event_group = self.clusters_df[self.clusters_df['event'] == event]
 
             # Calib data, all zeros, same length as the cluster data
             num_entries = len(event_group["uid"])

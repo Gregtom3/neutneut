@@ -76,7 +76,7 @@ class ModelEcalPlotter:
 
     @staticmethod
     def draw_six_sectors(ax):
-        center = (0, 0)
+        center = (0.5, 0.5)
         length = 4  # 2 units on each end
         angles = [-30, 30, 90]  # Angles in degrees
         for angle in angles:

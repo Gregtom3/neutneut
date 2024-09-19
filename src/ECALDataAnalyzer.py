@@ -4,7 +4,8 @@ from itertools import combinations
 from ECALDataReader import ECALDataReader
 import csv
 from tqdm import tqdm
-
+from global_params import *
+from geometry import calculate_strip_centroid_z, closest_point_between_lines, line_intersection
 
 class ECALDataAnalyzer:
     """
@@ -45,10 +46,8 @@ class ECALDataAnalyzer:
             csv_writer = csv.writer(csv_file)
 
             # Write the header row
-            header = [
-                "event_number", "id", "mc_pid", "otid", "sector", "layer", "energy", "time", 
-                "xo", "yo", "zo", "xe", "ye", "ze", "rec_pid", "pindex"
-            ]
+            header = csv_column_names # from global_params.py
+            
             csv_writer.writerow(header)
 
             # Loop over the events and process the data
@@ -145,17 +144,17 @@ class ECALDataAnalyzer:
             The updated DataFrame with centroids and intersection flags set.
         """
         # Group the data by event number and sector
-        grouped = df.groupby(['event_number', 'sector'])
+        grouped = df.groupby(['event', 'sector'])
 
         # Iterate through each event and sector group
-        for (event_number, sector), group in tqdm(grouped):
+        for (event, sector), group in tqdm(grouped):
             for n_start in [1, 4, 7]:
                 layer_group = group[group['layer'].isin([n_start, n_start + 1, n_start + 2])]
-                df = self.process_layer_group(df, layer_group, event_number, sector, R)
+                df = self.process_layer_group(df, layer_group, event, sector, R)
 
         return df
 
-    def process_layer_group(self, df, layer_group, event_number, sector, R):
+    def process_layer_group(self, df, layer_group, event, sector, R):
         """
         Process each strip within a layer group, searching for 3-way and 2-way intersections.
 
@@ -164,8 +163,8 @@ class ECALDataAnalyzer:
         df : pd.DataFrame
             The DataFrame being updated.
         layer_group : pd.DataFrame
-            The subset of data for a specific event_number, sector, and layer group.
-        event_number : int
+            The subset of data for a specific event, sector, and layer group.
+        event : int
             The event number for the group being processed.
         sector : int
             The sector number for the group being processed.
@@ -182,13 +181,13 @@ class ECALDataAnalyzer:
                 # Search for the most energetic 3-way intersection
                 max_energy, best_centroid, matched_strips = self.find_best_3way_intersection(strip_x, layer_group, R)
                 if max_energy > 0:
-                    df = self.update_centroid(df, event_number, matched_strips, best_centroid, 'is_3way_same_group')
+                    df = self.update_centroid(df, event, matched_strips, best_centroid, 'is_3way_same_group')
                     continue
 
                 # If no 3-way found, search for the most energetic 2-way intersection within the same layer group
                 max_energy, best_centroid, matched_strips = self.find_best_2way_intersection(strip_x, layer_group)
                 if max_energy > 0:
-                    df = self.update_centroid(df, event_number, matched_strips, best_centroid, 'is_2way_same_group')
+                    df = self.update_centroid(df, event, matched_strips, best_centroid, 'is_2way_same_group')
 
         return df
 
@@ -209,10 +208,10 @@ class ECALDataAnalyzer:
             The updated DataFrame.
         """
         # Group the data by event number and sector
-        grouped = df.groupby(['event_number', 'sector'])
+        grouped = df.groupby(['event', 'sector'])
 
         # Iterate through each event and sector group
-        for (event_number, sector), group in tqdm(grouped):
+        for (event, sector), group in tqdm(grouped):
             # Separate the layer groups within the current event and sector
             layer_groups = {n_start: group[group['layer'].isin([n_start, n_start + 1, n_start + 2])]
                             for n_start in [1, 4, 7]}
@@ -223,13 +222,13 @@ class ECALDataAnalyzer:
                         # Search for 3-way intersections across non-matching layer groups
                         max_energy, best_centroid, matched_strips = self.find_best_3way_intersection(strip_x, group, R, cross_group=True)
                         if max_energy > 0:
-                            df = self.update_centroid(df, strip_x['event_number'], matched_strips, best_centroid, 'is_3way_cross_group')
+                            df = self.update_centroid(df, strip_x['event'], matched_strips, best_centroid, 'is_3way_cross_group')
                             continue
 
                         # If no 3-way found, search for 2-way intersections across all layer groups
                         max_energy, best_centroid, matched_strips = self.find_best_2way_intersection(strip_x, group, cross_group=True)
                         if max_energy > 0:
-                            df = self.update_centroid(df, strip_x['event_number'], matched_strips, best_centroid, 'is_2way_cross_group')
+                            df = self.update_centroid(df, strip_x['event'], matched_strips, best_centroid, 'is_2way_cross_group')
 
         return df
     
@@ -352,7 +351,7 @@ class ECALDataAnalyzer:
 
         return max_energy, best_centroid, matched_strips
 
-    def update_centroid(self, df, event_number, matched_strips, centroid, intersection_type):
+    def update_centroid(self, df, event, matched_strips, centroid, intersection_type):
         """
         Update the centroid columns and one-hot encoded intersection flags in the DataFrame,
         only if all strips involved in the intersection match based on the `centroid_group_mandate`.
@@ -361,7 +360,7 @@ class ECALDataAnalyzer:
         -----------
         df : pd.DataFrame
             The DataFrame being updated.
-        event_number : int
+        event : int
             The event number of the strips being updated.
         matched_strips : list
             The IDs of the strips involved in the intersection.
@@ -378,7 +377,7 @@ class ECALDataAnalyzer:
         """
         if self.centroid_group_mandate is not None:
             # Get the values for the centroid_group_mandate (pindex or otid) for the matched strips
-            mandate_values = df[(df['event_number'] == event_number) & (df['id'].isin(matched_strips))][self.centroid_group_mandate].values
+            mandate_values = df[(df['event'] == event) & (df['id'].isin(matched_strips))][self.centroid_group_mandate].values
 
             # Check if all values for the group mandate are the same
             if len(set(mandate_values)) != 1:
@@ -387,7 +386,7 @@ class ECALDataAnalyzer:
 
         # Update the centroid and intersection type for the matched strips
         for strip_id in matched_strips:
-            strip = df[(df['event_number'] == event_number) & (df['id'] == strip_id)]
+            strip = df[(df['event'] == event) & (df['id'] == strip_id)]
             idx = strip.index
             df.loc[idx, 'centroid_x'] = centroid[0]
             df.loc[idx, 'centroid_y'] = centroid[1]
@@ -397,124 +396,3 @@ class ECALDataAnalyzer:
         return df
 
     
-    
-def calculate_strip_centroid_z(strip_df,centroid_x,centroid_y):
-    """
-    Find z0 such that the point (centroid_x, centroid_y, z0) is closest to the
-    line defined by the strip
-    
-    Derived in a Mathematica Notebook
-    
-    Parameters:
-    -----------
-    strip_df : pd.DataFrame
-        The DataFrame containing the strip (one row)
-    centroid_x,y : float
-        The centroid_(x,y) coordinates found by the intersecting/adjacent crossing lines
-    
-    Returns:
-    --------
-    float
-        The z0 from the function definition
-    
-    """
-    x0 = centroid_x
-    y0 = centroid_y
-    
-    # Extract values directly for x1, x2, y1, y2, z1, z2
-    x1 = strip_df['xo'].iloc[0]
-    x2 = strip_df['xe'].iloc[0]
-    y1 = strip_df['yo'].iloc[0]
-    y2 = strip_df['ye'].iloc[0]
-    z1 = strip_df['zo'].iloc[0]
-    z2 = strip_df['ze'].iloc[0]
-    
-    # If the strip has the same defined z1,z2, avoid inf
-    if z1==z2:
-        return z1
-    
-    numerator = ((1 * x0 * x1 - 1 * x0 * x2 - 1 * x1 * x2 + 1 * x2**2 + 
-                 1 * y0 * y1 - 1 * y0 * y2 - 1 * y1 * y2 + 1 * y2**2) * z1**3 +
-                (-3 * x0 * x1 + 1 * x1**2 + 3 * x0 * x2 + 1 * x1 * x2 - 2 * x2**2 - 
-                 3 * y0 * y1 + 1 * y1**2 + 3 * y0 * y2 + 1 * y1 * y2 - 2 * y2**2) * z1**2 * z2 +
-                (3 * x0 * x1 - 2 * x1**2 - 3 * x0 * x2 + 1 * x1 * x2 + 1 * x2**2 + 
-                 3 * y0 * y1 - 2 * y1**2 - 3 * y0 * y2 + 1 * y1 * y2 + 1 * y2**2) * z1 * z2**2 +
-                (-1 * x0 * x1 + 1 * x1**2 + 1 * x0 * x2 - 1 * x1 * x2 - 
-                 1 * y0 * y1 + 1 * y1**2 + 1 * y0 * y2 - 1 * y1 * y2) * z2**3)
-    
-    denominator = ((1 * x1**2 - 2 * x1 * x2 + 1 * x2**2 + 1 * y1**2 - 
-                   2 * y1 * y2 + 1 * y2**2) * z1**2 +
-                  (-2 * x1**2 + 4 * x1 * x2 - 2 * x2**2 - 2 * y1**2 + 
-                   4 * y1 * y2 - 2 * y2**2) * z1 * z2 +
-                  (1 * x1**2 - 2 * x1 * x2 + 1 * x2**2 + 1 * y1**2 - 
-                   2 * y1 * y2 + 1 * y2**2) * z2**2)
-    
-    z0 = numerator / denominator
-    return z0
-    
-def closest_point_between_lines(a1, b1, a2, b2):
-    """
-    Calculate the closest point between two lines in 2D space.
-    
-    Parameters:
-    -----------
-    a1, b1 : numpy.ndarray
-        The starting point and direction vector for the first line.
-    a2, b2 : numpy.ndarray
-        The starting point and direction vector for the second line.
-        
-    Returns:
-    --------
-    numpy.ndarray
-        The closest point between the two lines.
-    """
-    b1 = b1 / np.linalg.norm(b1)
-    b2 = b2 / np.linalg.norm(b2)
-    a_diff = a2 - a1
-    det = b1[0] * b2[1] - b1[1] * b2[0]
-    
-    if np.isclose(det, 0):
-        lambda_1 = np.dot(a_diff, b1)
-        closest_point_1 = a1 + lambda_1 * b1
-        return closest_point_1
-    else:
-        lambda_ = (a_diff[0] * b2[1] - a_diff[1] * b2[0]) / det
-        closest_point = a1 + lambda_ * b1
-        return closest_point
-
-
-def line_intersection(a1, b1, a2, b2):
-    """
-    Calculate the intersection point of two line segments in 2D space.
-    
-    Parameters:
-    -----------
-    a1, b1 : numpy.ndarray
-        The starting point and direction vector for the first line.
-    a2, b2 : numpy.ndarray
-        The starting point and direction vector for the second line.
-        
-    Returns:
-    --------
-    numpy.ndarray or None
-        The intersection point of the two line segments if they intersect, otherwise None.
-    """
-    b1 = b1 / np.linalg.norm(b1)
-    b2 = b2 / np.linalg.norm(b2)
-    a_diff = a2 - a1
-    det = b1[0] * b2[1] - b1[1] * b2[0]
-    
-    if np.isclose(det, 0):  # Lines are parallel or coincident
-        return None
-    else:
-        lambda_ = (a_diff[0] * b2[1] - a_diff[1] * b2[0]) / det
-        intersection = a1 + lambda_ * b1
-        
-        # Check if the intersection point lies within the bounding box of both segments
-        if (
-            np.amin([a1[0], a1[0] + b1[0], a2[0], a2[0] + b2[0]]) <= intersection[0] <= np.amax([a1[0], a1[0] + b1[0], a2[0], a2[0] + b2[0]]) and
-            np.amin([a1[1], a1[1] + b1[1], a2[1], a2[1] + b2[1]]) <= intersection[1] <= np.amax([a1[1], a1[1] + b1[1], a2[1], a2[1] + b2[1]])
-        ):
-            return intersection
-        else:
-            return None

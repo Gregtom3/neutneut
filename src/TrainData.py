@@ -7,6 +7,7 @@ from itertools import combinations
 import h5py
 import os
 from global_params import *
+import random
 
 class DataPreprocessor:
     """
@@ -41,8 +42,8 @@ class DataPreprocessor:
             # Remove rows containing any NaN values
             df = df.dropna()
             
-        # Group by file_number and file_event_number
-        grouped = df.groupby(['file_number', 'file_event_number'])
+        # Group by file_number and file_event
+        grouped = df.groupby(['file_number', 'file_event'])
 
         # Filter out groups where the number of non- -1 unique otid values is less than min_particles
         def filter_group(group):
@@ -55,7 +56,7 @@ class DataPreprocessor:
         df = self._one_hot_encode(df, 'sector', 6)
         df = self._one_hot_encode(df, 'layer', 9)
         df = self._rescale_columns(df)
-        df = self._delete_columns(df, ['otid', 'event_number', 'status', 'id'])
+        df = self._delete_columns(df, ['otid', 'event', 'status', 'id'])
         df = self._reorder_columns(df)
 
         return df
@@ -171,9 +172,9 @@ class DataPreprocessor:
         """
         # Define the new order of columns
         column_order = [
-            'file_number', 'file_event_number', 'unique_otid', 'mc_pid'
+            'file_number', 'file_event', 'unique_otid', 'mc_pid'
         ] + [col for col in df.columns if col not in [
-            'file_number', 'file_event_number', 'unique_otid', 'mc_pid'
+            'file_number', 'file_event', 'unique_otid', 'mc_pid'
         ]]
 
         # Reorder the columns
@@ -189,16 +190,14 @@ class TrainData:
     ensuring unique mc_index across all files and splitting the data into train and test sets.
     """
 
-    def __init__(self, csv_files, train_size=0.8, return_tensor=False, K=10, remove_background=False, min_particles=1):
+    def __init__(self, csv_files, return_tensor=False, K=10, remove_background=False, min_particles=1):
         """
-        Initialize the TrainData class with a list of CSV files and the desired train/test split.
+        Initialize the TrainData class with a list of CSV files
 
         Parameters:
         -----------
         csv_files : list[str]
             List of paths to the intersection CSV files.
-        train_size : float
-            The proportion of the dataset to include in the train split (default is 0.8).
         return_tensor : bool
             If True, returns the data as tensors instead of DataFrames.
         K : int
@@ -209,7 +208,6 @@ class TrainData:
             Minimum number of particles per event 
         """
         self.csv_files = csv_files
-        self.train_size = train_size
         self.return_tensor = return_tensor
         self.K = K
         self.remove_background = remove_background
@@ -221,7 +219,6 @@ class TrainData:
         # Automatically load, merge, preprocess, and split the data upon initialization
         self._load_and_merge_csvs()
         self._preprocess_data()
-        self._split_data()
 
 
     def _load_and_merge_csvs(self):
@@ -240,7 +237,7 @@ class TrainData:
                 continue
 
             df['file_number'] = file_number
-            df['file_event_number'] = df['event_number']
+            df['file_event'] = df['event']
 
             # Create the unique_otid column
             df['unique_otid'] = df['otid']
@@ -248,9 +245,9 @@ class TrainData:
             # Adjust the otid values for uniqueness across files, skipping -1
             non_negative_mask = df['unique_otid'] != -1
 
-            # Combine file_event_number, otid, and file_number to ensure uniqueness
+            # Combine file_event, otid, and file_number to ensure uniqueness
             df.loc[non_negative_mask, 'unique_otid'] = (
-                df.loc[non_negative_mask, 'file_event_number'].astype(str) + "_" +
+                df.loc[non_negative_mask, 'file_event'].astype(str) + "_" +
                 df.loc[non_negative_mask, 'otid'].astype(str) + "_" +
                 df.loc[non_negative_mask, 'file_number'].astype(str)
             ).astype('category').cat.codes + unique_otid_offset
@@ -271,34 +268,7 @@ class TrainData:
     def _preprocess_data(self):
         preprocessor = DataPreprocessor()
         self.data = preprocessor.preprocess(self.data, self.remove_background, self.min_particles)
-
-    def _split_data(self):
-        event_groups = self.data.groupby(['file_number', 'file_event_number'])
-        # Get a list of unique events
-        unique_events = event_groups.size().index.tolist()
-
-        # Shuffle the events
-        np.random.seed(42)
-        np.random.shuffle(unique_events)
-
-        # Handle the case where 100% of data is to be used as training data
-        if self.train_size >= 1.0:
-            train_events = unique_events
-            test_events = []
-        else:
-            # Calculate the number of events for the training set
-            train_event_count = int(len(unique_events) * self.train_size)
-            # Split the events into train and test sets
-            train_events = unique_events[:train_event_count]
-            test_events = unique_events[train_event_count:]
-
-        # Select data corresponding to the train and test events
-        self.train_data = self.data[self.data.set_index(['file_number', 'file_event_number']).index.isin(train_events)]
-        self.test_data = self.data[self.data.set_index(['file_number', 'file_event_number']).index.isin(test_events)]
-
-        if self.return_tensor:
-            self.train_data = self._convert_to_tensor(self.train_data)
-            self.test_data = self._convert_to_tensor(self.test_data) if len(self.test_data) > 0 else None
+        self.data = self._convert_to_tensor(self.data)
 
     def _convert_to_tensor(self, df):
         feature_columns = [
@@ -312,7 +282,7 @@ class TrainData:
         ]
 
         tensors = []
-        grouped = df.groupby(['file_number', 'file_event_number'])
+        grouped = df.groupby(['file_number', 'file_event'])
         for _, group in tqdm(grouped):
             group = group.sort_values(by='energy', ascending=False)
             
@@ -329,75 +299,104 @@ class TrainData:
 
         return tf.convert_to_tensor(tensors, dtype=tf.float32)
 
-    def get_train_data(self, maxN=-1):
-        return self._get_data(self.train_data, maxN)
-
-    def get_test_data(self, maxN=-1):
-        return self._get_data(self.test_data, maxN)
-
-    def _get_data(self, data, maxN):
-        """
-        Retrieve processed data, potentially limited by maxN.
-
-        Parameters:
-        -----------
-        data : np.array
-            The data array to process.
-        maxN : int
-            Maximum number of samples to return. If maxN <= 0, return all data.
-
-        Returns:
-        --------
-        tuple of np.array
-            Returns X, y, and misc data arrays.
-        """
+    def get_data(self, maxN=-1):
         if maxN > 0:
-            data = data[:maxN]
-
+            data = self.data[:maxN]
+        else:
+            data = self.data
+        
         X = data[:, :, :30]
         y = data[:, :, -1:]
         misc = data[:, :, 30:-1]
 
         return X, y, misc
 
-    
-    
-    
 def load_unzip_data(h5_filename):
     with h5py.File(h5_filename,'r') as hf:
-        keys = list(hf.keys())
-        if "test_X" in keys: # In `process_ecal_data_tensors.py` we assign .h5 files to either train or test data
-                             # Future plans should NOT do this...
-            X = hf["test_X"][:]
-            y = hf["test_y"][:]
-            misc = hf["test_misc"][:]
-        else:
-            X = hf["train_X"][:]
-            y = hf["train_y"][:]
-            misc = hf["train_misc"][:]
+        X = hf["X"][:]
+        y = hf["y"][:]
+        misc = hf["misc"][:]
     return (X,y,misc)
 
 
 def load_zip_train_test_data(directory, batch_size, num_train_batches=None, num_test_batches=None):
-    # Define filenames
-    train_filename = os.path.join(directory, 'dataset_train.h5')
-    test_filename = os.path.join(directory, 'dataset_test.h5')
+    # List all .h5 files in the directory
+    h5_files = [os.path.join(directory, f) for f in os.listdir(directory) if f.endswith('.h5')]
 
-    # Helper function to load each component (X, y, misc) in batches
-    def load_data_component_in_batches(h5_filename, batch_size, dataset_name, num_batches=None):
+    # Check if there is only a single file
+    single_file_split = len(h5_files) == 1
+
+    # Shuffle files and split into 80/20 train-test split
+    if not single_file_split:
+        random.shuffle(h5_files)
+        split_idx = int(train_test_ratio * len(h5_files))
+        train_files = h5_files[:split_idx]
+        test_files = h5_files[split_idx:]
+    else:
+        # When there is only one file, we'll split it internally
+        train_files = h5_files
+        test_files = []  # No separate test files, splitting happens within the file
+
+    # Helper function to load each component (X, y, misc) in batches from multiple files or single file
+    def load_data_component_in_batches(file_list, batch_size, dataset_name, num_batches=None, single_file_split=False):
         def generator():
-            with h5py.File(h5_filename, 'r') as hf:
-                dataset = hf[dataset_name]
-                num_samples = len(dataset)
-                max_batches = num_batches if num_batches else num_samples // batch_size
-                for i in range(0, num_samples, batch_size):
-                    if i // batch_size >= max_batches:
-                        break
-                    yield dataset[i:i+batch_size]
+            batch_count = 0
+            for h5_filename in file_list:
+                with h5py.File(h5_filename, 'r') as hf:
+                    dataset = hf[dataset_name]
+                    num_samples = len(dataset)
+
+                    if single_file_split:
+                        # Perform an 80/20 split within the single file
+                        split_idx = int(0.8 * num_samples)
+                        for i in range(0, split_idx, batch_size):
+                            if num_batches and batch_count >= num_batches:
+                                return
+                            yield dataset[i:i+batch_size]
+                            batch_count += 1
+                    else:
+                        # Yield all data from multiple files
+                        for i in range(0, num_samples, batch_size):
+                            if num_batches and batch_count >= num_batches:
+                                return
+                            yield dataset[i:i+batch_size]
+                            batch_count += 1
         
-        if "_X" in dataset_name:
+        # Determine the shape based on the dataset_name (adjust shape based on actual data)
+        if "X" in dataset_name:
+            shape = (None, 100, 30)  # Example shape for 'X' data
+        elif "y" in dataset_name:
+            shape = (None, 100, 1)   # Example shape for 'y' data
+        else:
+            shape = (None, 100, 3)   # Example shape for 'misc' data
+        
+        # Create a TensorFlow Dataset from the generator
+        dataset = tf.data.Dataset.from_generator(
+            generator,
+            output_signature=tf.TensorSpec(shape=shape, dtype=tf.float32)
+        )
+        return dataset
+
+    # Helper function to load the test set from within a single file (for single file case)
+    def load_test_data_component_from_single_file(file_list, batch_size, dataset_name, num_batches=None):
+        def generator():
+            batch_count = 0
+            for h5_filename in file_list:
+                with h5py.File(h5_filename, 'r') as hf:
+                    dataset = hf[dataset_name]
+                    num_samples = len(dataset)
+                    split_idx = int(0.8 * num_samples)
+
+                    for i in range(split_idx, num_samples, batch_size):
+                        if num_batches and batch_count >= num_batches:
+                            return
+                        yield dataset[i:i+batch_size]
+                        batch_count += 1
+
+        # Determine the shape based on the dataset_name
+        if "X" in dataset_name:
             shape = (None, 100, 30)
-        elif "_y" in dataset_name:
+        elif "y" in dataset_name:
             shape = (None, 100, 1)
         else:
             shape = (None, 100, 3)
@@ -408,22 +407,21 @@ def load_zip_train_test_data(directory, batch_size, num_train_batches=None, num_
         )
         return dataset
 
-    # Get the number of samples in the train and test datasets
-    with h5py.File(train_filename, 'r') as hf:
-        train_size = len(hf['train_X'])  # Get the number of training samples
-
-    with h5py.File(test_filename, 'r') as hf:
-        test_size = len(hf['test_X'])  # Get the number of testing samples
-
     # Load training components with optional limit on number of batches
-    train_X_data = load_data_component_in_batches(train_filename, batch_size, 'train_X', num_train_batches)
-    train_y_data = load_data_component_in_batches(train_filename, batch_size, 'train_y', num_train_batches)
-    train_misc_data = load_data_component_in_batches(train_filename, batch_size, 'train_misc', num_train_batches)
+    train_X_data = load_data_component_in_batches(train_files, batch_size, 'X', num_train_batches, single_file_split)
+    train_y_data = load_data_component_in_batches(train_files, batch_size, 'y', num_train_batches, single_file_split)
+    train_misc_data = load_data_component_in_batches(train_files, batch_size, 'misc', num_train_batches, single_file_split)
 
-    # Load testing components with optional limit on number of batches
-    test_X_data = load_data_component_in_batches(test_filename, batch_size, 'test_X', num_test_batches)
-    test_y_data = load_data_component_in_batches(test_filename, batch_size, 'test_y', num_test_batches)
-    test_misc_data = load_data_component_in_batches(test_filename, batch_size, 'test_misc', num_test_batches)
+    # Load testing components: Either from separate test files or from within a single file
+    if single_file_split:
+        test_X_data = load_test_data_component_from_single_file(train_files, batch_size, 'X', num_test_batches)
+        test_y_data = load_test_data_component_from_single_file(train_files, batch_size, 'y', num_test_batches)
+        test_misc_data = load_test_data_component_from_single_file(train_files, batch_size, 'misc', num_test_batches)
+    else:
+        test_X_data = load_data_component_in_batches(test_files, batch_size, 'X', num_test_batches)
+        test_y_data = load_data_component_in_batches(test_files, batch_size, 'y', num_test_batches)
+        test_misc_data = load_data_component_in_batches(test_files, batch_size, 'misc', num_test_batches)
 
     # Return the datasets along with the sizes
-    return (train_X_data, train_y_data, train_misc_data), (test_X_data, test_y_data, test_misc_data), train_size-1, test_size-1
+    return (train_X_data, train_y_data, train_misc_data), (test_X_data, test_y_data, test_misc_data)
+

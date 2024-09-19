@@ -1,8 +1,14 @@
 # Number of model features
-Nfeat = 30
+N_feat = 30
+
+# Maximum population of strips per event
+K = 100
+
+# Train/Test Split Ratio
+train_test_ratio = 0.8 # 80%
 
 # Name of model features
-model_features = [
+model_x_names = [
 'energy', 'time', 
 'xo', 'yo', 'zo', 'xe', 'ye', 'ze',
 'layer_1', 'layer_2', 'layer_3', 'layer_4',
@@ -36,3 +42,6 @@ ECAL_z_max  = 950
 
 # ECAL_cluster bank names
 ECAL_cluster_names = ["id", "status", "sector", "layer", "x", "y", "z", "energy", "time", "widthU", "widthV", "widthW", "idU", "idV", "idW", "coordU", "coordV", "coordW"]
+
+# CSV column names
+csv_column_names =   ["event", "id", "mc_pid", "otid", "sector", "layer", "energy", "time", "xo", "yo", "zo", "xe", "ye", "ze", "rec_pid", "pindex"]
