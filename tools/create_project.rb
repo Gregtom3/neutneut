@@ -206,27 +206,29 @@ else
   end
 end
 
-# Create a Slurm file for combining .h5 files
-h5_dir = File.join(project_dir, 'training')
-combine_command = "python3 tools/combine_h5.py #{h5_dir}"
-combine_slurm_filename = File.join(project_dir, "slurm/combine_h5.slurm")
+# NO LONGER NEEDED 
 
-combine_slurm_content = <<-SLURM
-#!/bin/bash
-#SBATCH --account=clas12
-#SBATCH --partition=production
-#SBATCH --mem-per-cpu=2000
-#SBATCH --job-name=combine_h5
-#SBATCH --cpus-per-task=1
-#SBATCH --time=2:00:00
-#SBATCH --output=#{combine_slurm_filename}.out
-#SBATCH --error=#{combine_slurm_filename}.err
-#SBATCH --dependency=afterok:#{slurm_job_ids.join(':')}
+# # Create a Slurm file for combining .h5 files
+# h5_dir = File.join(project_dir, 'training')
+# combine_command = "python3 tools/combine_h5.py #{h5_dir}"
+# combine_slurm_filename = File.join(project_dir, "slurm/combine_h5.slurm")
 
-#{combine_command}
-SLURM
+# combine_slurm_content = <<-SLURM
+# #!/bin/bash
+# #SBATCH --account=clas12
+# #SBATCH --partition=production
+# #SBATCH --mem-per-cpu=2000
+# #SBATCH --job-name=combine_h5
+# #SBATCH --cpus-per-task=1
+# #SBATCH --time=2:00:00
+# #SBATCH --output=#{combine_slurm_filename}.out
+# #SBATCH --error=#{combine_slurm_filename}.err
+# #SBATCH --dependency=afterok:#{slurm_job_ids.join(':')}
 
-File.open(combine_slurm_filename, "w") { |file| file.write(combine_slurm_content) }
+# #{combine_command}
+# SLURM
 
-# Submit the combine job after all other jobs
-system("sbatch #{combine_slurm_filename}")
+# File.open(combine_slurm_filename, "w") { |file| file.write(combine_slurm_content) }
+
+# # Submit the combine job after all other jobs
+# system("sbatch #{combine_slurm_filename}")

@@ -93,17 +93,12 @@ python_program = './tools/predict_model.py'
 puts "#{training_dir}"
 # Loop over all .h5 files in the training directory
 Dir.glob("#{training_dir}/*.h5").each do |h5_file|
-  # Skip files that end with '_train.h5' or '_test.h5'
-  next if h5_file.end_with?('dataset_test.h5') || h5_file.end_with?('dataset_train.h5')
-
+    
   # Extract the file's padded number from the h5 file name
   file_number = File.basename(h5_file, ".h5").split("_").first.split(".").last
   
-  # Get appropriate file extension (train, test, reco)
-  file_extension = File.basename(h5_file, ".h5").split("_").last
-
   # Find the matching .hipo file with the same padded number
-  hipo_file = "#{training_dir}/../cooked/#{File.basename(h5_file, ".h5")}.hipo".split("_").first+".hipo"
+  hipo_file = "#{training_dir}/../cooked/#{File.basename(h5_file, ".h5")}.hipo"
 
   unless File.exist?(hipo_file)
     puts "Error: Matching HIPO file for #{h5_file} not found (expected #{hipo_file})."
@@ -111,10 +106,10 @@ Dir.glob("#{training_dir}/*.h5").each do |h5_file|
   end
 
   # Define the paths for _OC.hipo, _OC1.hipo, and _OC2.hipo
-  cooked_OC_hipo = "#{predict_dir}/#{File.basename(hipo_file, ".hipo")}_#{file_extension}_OC.hipo"
-  cooked_OC1_hipo = "#{predict_dir}/#{File.basename(hipo_file, ".hipo")}_#{file_extension}_OC1.hipo"
-  cooked_OC2_hipo = "#{predict_dir}/#{File.basename(hipo_file, ".hipo")}_#{file_extension}_OC2.hipo"
-  final_filtered_hipo = "#{predict_dir}/#{File.basename(hipo_file, ".hipo")}_#{file_extension}_ML.hipo"
+  cooked_OC_hipo = "#{predict_dir}/#{File.basename(hipo_file, ".hipo")}_OC.hipo"
+  cooked_OC1_hipo = "#{predict_dir}/#{File.basename(hipo_file, ".hipo")}_OC1.hipo"
+  cooked_OC2_hipo = "#{predict_dir}/#{File.basename(hipo_file, ".hipo")}_OC2.hipo"
+  final_filtered_hipo = "#{predict_dir}/#{File.basename(hipo_file, ".hipo")}_ML.hipo"
 
   # Step 0: Clean up intermediate files
   # Avoids errors in recon-util
@@ -126,7 +121,7 @@ Dir.glob("#{training_dir}/*.h5").each do |h5_file|
     
   # Step 1: Run the Python program with the .h5 and original hipo file
   puts "Running the Python program on #{h5_file} and #{hipo_file}..."
-  python_command = "python3 #{python_program} --input_h5 #{h5_file} --original_hipofile #{hipo_file} --clustering_variable otid --tB #{options[:tB]} --tD #{options[:tD]} --model_path #{model_path}"
+  python_command = "python3 #{python_program} --input_h5 #{h5_file} --original_hipofile #{hipo_file} --clustering_variable unique_otid --tB #{options[:tB]} --tD #{options[:tD]} --model_path #{model_path}"
   system(python_command)
 
   # Check if the Python program executed successfully

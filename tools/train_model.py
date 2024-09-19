@@ -34,7 +34,6 @@ def main(config_path):
     project_directory = config['project_directory']
     output_dir        = config['output_dir']
     
-
     # Set training parameters from config
     batch_size = int(config['batch_size'])
     initial_lr = float(config['initial_lr'])
@@ -64,7 +63,7 @@ def main(config_path):
 
     
     # Load training and testing data in batches, but limit to `num_batches`
-    (train_X_data, train_y_data, train_misc_data), (test_X_data, test_y_data, test_misc_data), train_size, test_size = load_zip_train_test_data(
+    (train_X_data, train_y_data, train_misc_data), (test_X_data, test_y_data, test_misc_data) = load_zip_train_test_data(
         project_directory, batch_size, num_train_batches=num_train_batches, num_test_batches = num_test_batches
     )
 
@@ -152,13 +151,13 @@ def main(config_path):
                         epochs=N_epochs,
                         shuffle=True,
                         validation_data=test_data,
-                        callbacks=[early_stopping_callback,
-                                   clr_callback,
-                                   ecal_plot_callback,
-                                   loss_plot_callback,
-                                   PrintBatchMetricsCallback(num_train_batches=num_train_batches,
-                                                             num_epochs=N_epochs),
-                        ],
+#                         callbacks=[early_stopping_callback,
+#                                    clr_callback,
+#                                    ecal_plot_callback,
+#                                    loss_plot_callback,
+#                                    PrintBatchMetricsCallback(num_train_batches=num_train_batches,
+#                                                              num_epochs=N_epochs),
+#                         ],
                         verbose=2)
 
     create_gif_from_pngs(outdir, "training.fast", duration=60)
