@@ -76,8 +76,8 @@ class ModelEcalPlotter:
 
     @staticmethod
     def draw_six_sectors(ax):
-        center = (0.5, 0.5)
-        length = 2  # 2 units on each end
+        center = (0, 0)
+        length = 4  # 2 units on each end
         angles = [-30, 30, 90]  # Angles in degrees
         for angle in angles:
             radians = np.radians(angle)
@@ -105,11 +105,11 @@ class ModelEcalPlotter:
             if x==0 and y==0:
                 continue
             ax.scatter(x,y,s=25,color="gray",marker="o",edgecolor="k",zorder=100)
-        ax.set_xlabel("ECAL::peaks (X)")
-        ax.set_ylabel("ECAL::peaks (Y)")
+        ax.set_xlabel("ECAL::hits (X)")
+        ax.set_ylabel("ECAL::hits (Y)")
         self.draw_six_sectors(ax)
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
+        ax.set_xlim(0,1)
+        ax.set_ylim(0,1)
         return ax
 
     def plot_latent_coordinates(self, ax=None):
@@ -151,11 +151,11 @@ class ModelEcalPlotter:
         ax.legend(frameon=True, ncols=2, bbox_to_anchor=(0.5, 1), loc='lower center')
         for i in range(self.event_xo.shape[0]):
             ax.plot([self.event_xo[i], self.event_xe[i]], [self.event_yo[i], self.event_ye[i]], color='black', alpha=0.2)
-        ax.set_xlabel("ECAL::peaks (X)")
-        ax.set_ylabel("ECAL::peaks (Y)")
+        ax.set_xlabel("ECAL::hits (X)")
+        ax.set_ylabel("ECAL::hits (Y)")
         self.draw_six_sectors(ax)
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
+        ax.set_xlim(0,1)
+        ax.set_ylim(0,1)
         return ax
 
     def plot_clustered_ecal_peaks(self,ax=None):
@@ -181,11 +181,11 @@ class ModelEcalPlotter:
             color = self.colors[ic % len(self.colors)]
             ax.scatter([leader_xo, leader_xe], [leader_yo, leader_ye], color=color, s=150, edgecolor="k", hatch="...", marker="s")
         ax.legend(frameon=True, ncols=2, bbox_to_anchor=(0.5, -0.15), loc='upper center')
-        ax.set_xlabel("ECAL::peaks (X)")
-        ax.set_ylabel("ECAL::peaks (Y)")
+        ax.set_xlabel("ECAL::hits (X)")
+        ax.set_ylabel("ECAL::hits (Y)")
         self.draw_six_sectors(ax)
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
+        ax.set_xlim(0,1)
+        ax.set_ylim(0,1)
         return ax
 
     def plot_cluster_latent_space(self, tD=None, ax=None):

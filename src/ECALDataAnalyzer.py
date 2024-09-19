@@ -11,7 +11,7 @@ class ECALDataAnalyzer:
     Class to analyze ECAL data and write the results to a CSV file.
     """
 
-    def __init__(self, input_filename, output_filename="output.csv", data_type="mc"):
+    def __init__(self, input_filename, output_filename="output.csv", data_type="mc", centroid_group_mandate=None):
         """
         Initialize the analyzer with input and output file names.
         
@@ -23,11 +23,16 @@ class ECALDataAnalyzer:
             Path to the initial output CSV file for hits (default is "output.csv").
         data_type : str
             Type of data to process, either "mc" or "rec". Determines how certain fields are handled.
+        centroid_group_mandate : str or None
+            Field to mandate matching strips by ("pindex", "otid", or None).
         """
         self.input_filename = input_filename
         self.output_filename = output_filename
         self.data_type = data_type
-        assert(self.data_type in ["mc","rec"])
+        self.centroid_group_mandate = centroid_group_mandate
+        assert(self.data_type in ["mc", "rec"])
+        assert(self.centroid_group_mandate in [None, "pindex", "otid"])
+
 
     def read_ecal_data_from_event(self):
         """
@@ -104,7 +109,8 @@ class ECALDataAnalyzer:
         # Initialize centroid columns with default values
         df['centroid_x'] = 0.0
         df['centroid_y'] = 0.0
-
+        df['centroid_z'] = 0.0
+        
         # Initialize one-hot encoded columns for intersection types
         df['is_3way_same_group'] = 0
         df['is_2way_same_group'] = 0
@@ -294,7 +300,7 @@ class ECALDataAnalyzer:
                     if total_energy > max_energy:
                         max_energy = total_energy
                         best_centroid = centroid
-                        matched_strips = [strip_x['id']]
+                        matched_strips = [strip_x['id'], strip_n1['id'], strip_n2['id']]
 
         return max_energy, best_centroid, matched_strips
 
@@ -342,13 +348,14 @@ class ECALDataAnalyzer:
                 if total_energy > max_energy:
                     max_energy = total_energy
                     best_centroid = intersection
-                    matched_strips = [strip_x['id']]
+                    matched_strips = [strip_x['id'], strip_n1['id']]
 
         return max_energy, best_centroid, matched_strips
 
     def update_centroid(self, df, event_number, matched_strips, centroid, intersection_type):
         """
-        Update the centroid columns and one-hot encoded intersection flags in the DataFrame.
+        Update the centroid columns and one-hot encoded intersection flags in the DataFrame,
+        only if all strips involved in the intersection match based on the `centroid_group_mandate`.
 
         Parameters:
         -----------
@@ -361,23 +368,89 @@ class ECALDataAnalyzer:
         centroid : np.array
             The centroid coordinates to set.
         intersection_type : str
-            The type of intersection (one of 'is_3way_same_group', 'is_2way_same_group', 'is_3way_cross_group', 'is_2way_cross_group').
+            The type of intersection (one of 'is_3way_same_group', 'is_2way_same_group', 
+            'is_3way_cross_group', 'is_2way_cross_group').
 
         Returns:
         --------
         pd.DataFrame
             The updated DataFrame.
         """
+        if self.centroid_group_mandate is not None:
+            # Get the values for the centroid_group_mandate (pindex or otid) for the matched strips
+            mandate_values = df[(df['event_number'] == event_number) & (df['id'].isin(matched_strips))][self.centroid_group_mandate].values
+
+            # Check if all values for the group mandate are the same
+            if len(set(mandate_values)) != 1:
+                # Skip updating if they do not match
+                return df
+
+        # Update the centroid and intersection type for the matched strips
         for strip_id in matched_strips:
-            idx = df[(df['event_number'] == event_number) & (df['id'] == strip_id)].index
+            strip = df[(df['event_number'] == event_number) & (df['id'] == strip_id)]
+            idx = strip.index
             df.loc[idx, 'centroid_x'] = centroid[0]
             df.loc[idx, 'centroid_y'] = centroid[1]
+            df.loc[idx, 'centroid_z'] = calculate_strip_centroid_z(strip, centroid[0], centroid[1])
             df.loc[idx, intersection_type] = 1
 
         return df
 
     
     
+def calculate_strip_centroid_z(strip_df,centroid_x,centroid_y):
+    """
+    Find z0 such that the point (centroid_x, centroid_y, z0) is closest to the
+    line defined by the strip
+    
+    Derived in a Mathematica Notebook
+    
+    Parameters:
+    -----------
+    strip_df : pd.DataFrame
+        The DataFrame containing the strip (one row)
+    centroid_x,y : float
+        The centroid_(x,y) coordinates found by the intersecting/adjacent crossing lines
+    
+    Returns:
+    --------
+    float
+        The z0 from the function definition
+    
+    """
+    x0 = centroid_x
+    y0 = centroid_y
+    
+    # Extract values directly for x1, x2, y1, y2, z1, z2
+    x1 = strip_df['xo'].iloc[0]
+    x2 = strip_df['xe'].iloc[0]
+    y1 = strip_df['yo'].iloc[0]
+    y2 = strip_df['ye'].iloc[0]
+    z1 = strip_df['zo'].iloc[0]
+    z2 = strip_df['ze'].iloc[0]
+    
+    # If the strip has the same defined z1,z2, avoid inf
+    if z1==z2:
+        return z1
+    
+    numerator = ((1 * x0 * x1 - 1 * x0 * x2 - 1 * x1 * x2 + 1 * x2**2 + 
+                 1 * y0 * y1 - 1 * y0 * y2 - 1 * y1 * y2 + 1 * y2**2) * z1**3 +
+                (-3 * x0 * x1 + 1 * x1**2 + 3 * x0 * x2 + 1 * x1 * x2 - 2 * x2**2 - 
+                 3 * y0 * y1 + 1 * y1**2 + 3 * y0 * y2 + 1 * y1 * y2 - 2 * y2**2) * z1**2 * z2 +
+                (3 * x0 * x1 - 2 * x1**2 - 3 * x0 * x2 + 1 * x1 * x2 + 1 * x2**2 + 
+                 3 * y0 * y1 - 2 * y1**2 - 3 * y0 * y2 + 1 * y1 * y2 + 1 * y2**2) * z1 * z2**2 +
+                (-1 * x0 * x1 + 1 * x1**2 + 1 * x0 * x2 - 1 * x1 * x2 - 
+                 1 * y0 * y1 + 1 * y1**2 + 1 * y0 * y2 - 1 * y1 * y2) * z2**3)
+    
+    denominator = ((1 * x1**2 - 2 * x1 * x2 + 1 * x2**2 + 1 * y1**2 - 
+                   2 * y1 * y2 + 1 * y2**2) * z1**2 +
+                  (-2 * x1**2 + 4 * x1 * x2 - 2 * x2**2 - 2 * y1**2 + 
+                   4 * y1 * y2 - 2 * y2**2) * z1 * z2 +
+                  (1 * x1**2 - 2 * x1 * x2 + 1 * x2**2 + 1 * y1**2 - 
+                   2 * y1 * y2 + 1 * y2**2) * z2**2)
+    
+    z0 = numerator / denominator
+    return z0
     
 def closest_point_between_lines(a1, b1, a2, b2):
     """

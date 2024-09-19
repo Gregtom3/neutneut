@@ -3,7 +3,7 @@ from ModelEcalPlotter import ModelEcalPlotter
 import matplotlib.pyplot as plt
 from Evaluator import Evaluator
 import numpy as np
-
+import pandas as pd
 class PlotCallback(tf.keras.callbacks.Callback):
     def __init__(self, X, y, misc, tB, tD, outdir=None):
         super().__init__()
@@ -16,9 +16,9 @@ class PlotCallback(tf.keras.callbacks.Callback):
 
     def on_epoch_end(self, epoch, logs=None):
         
-        evaluator = Evaluator(self.X, 
-                              self.y, 
-                              self.misc)
+        evaluator = Evaluator.from_data(self.X, 
+                                        self.y, 
+                                        self.misc)
         evaluator.load_model(self.model)
         evaluator.predict()
         evaluator.cluster(self.tB, self.tD)
@@ -67,7 +67,7 @@ class LossPlotCallback(tf.keras.callbacks.Callback):
         train_coward_loss = self.model.history.history['coward_loss']
         val_coward_loss = self.model.history.history['val_coward_loss']
 
-        plt.figure(figsize=(7, 5))
+        plt.figure(figsize=(7, 10),dpi=100)
 
         # Plot all the individual losses on the same plot
         plt.subplot(2, 1, 1)
@@ -81,7 +81,7 @@ class LossPlotCallback(tf.keras.callbacks.Callback):
         plt.xlabel('Epochs')
         plt.ylabel('Loss')
         plt.legend()
-        plt.yscale('log')
+        #plt.yscale('log')
 
         # Plot the total loss on a separate subplot
         plt.subplot(2, 1, 2)
@@ -92,7 +92,7 @@ class LossPlotCallback(tf.keras.callbacks.Callback):
         plt.ylabel('Loss')
         plt.legend()
 
-        plt.yscale('log')
+        #plt.yscale('log')
         plt.tight_layout()
 
         # Save the figure
@@ -133,8 +133,7 @@ class PrintBatchMetricsCallback(tf.keras.callbacks.Callback):
     
     def on_batch_end(self, batch, logs=None):
         # Only print every 1/100th of the total number of batches
-        #if self.num_train_batches is not None and batch % max(1, self.num_train_batches // 1) == 0:
-        if True:
+        if self.num_train_batches is not None and batch % max(1, self.num_train_batches // 100) == 0:
             # Get the metrics from the logs dictionary and print them
             loss = logs.get('loss')
             attractive_loss = logs.get('attractive_loss')

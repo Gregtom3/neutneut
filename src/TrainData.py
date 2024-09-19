@@ -6,6 +6,7 @@ from tqdm import tqdm
 from itertools import combinations
 import h5py
 import os
+from global_params import *
 
 class DataPreprocessor:
     """
@@ -53,7 +54,7 @@ class DataPreprocessor:
         df = self._filter_peak_time(df)
         df = self._one_hot_encode(df, 'sector', 6)
         df = self._one_hot_encode(df, 'layer', 9)
-        df = self._rescale_columns(df, ['energy', 'time', 'xo', 'yo', 'zo', 'xe', 'ye', 'ze', 'centroid_x', 'centroid_y'])
+        df = self._rescale_columns(df)
         df = self._delete_columns(df, ['otid', 'event_number', 'status', 'id'])
         df = self._reorder_columns(df)
 
@@ -72,41 +73,42 @@ class DataPreprocessor:
         pd.DataFrame
             The filtered DataFrame.
         """
-        return df[(df['time'] >= 0) & (df['time'] <= 200) & (df['time'] >= 0) & (df['time'] >= 0)].copy()
+        return df[(df['time'] >= ECAL_time_min) & (df['time'] <= ECAL_time_max)].copy()
 
-    def _rescale_columns(self, df, columns_to_scale):
+    def _rescale_columns(self, df):
         """
-        Rescale specified numeric columns between 0-1, with certain groups sharing the same min-max scaling.
+        Rescale specified numeric columns, with certain groups sharing the same scaling range.
 
         Parameters:
         -----------
         df : pd.DataFrame
             The DataFrame to rescale.
-        columns_to_scale : list of str
-            List of column names to scale.
+            
         Returns:
         --------
         pd.DataFrame
             The DataFrame with scaled columns.
         """
-        # Group 1: Shared scaling for 'xo', 'yo', 'xe', 'ye', 'centroid_x' and 'centroid_y'
+
+        # Group 1: Shared scaling for 'xo', 'yo', 'xe', 'ye', 'centroid_x', 'centroid_y'
         group_1 = ['xo', 'yo', 'xe', 'ye', 'centroid_x', 'centroid_y']
-        group_1_values = df[group_1].values.flatten()  # Flatten to find global min and max
-        min_val = group_1_values.min()
-        max_val = group_1_values.max()
-        df[group_1] = (df[group_1] - min_val) / (max_val - min_val)
+        min_val_1, max_val_1 = ECAL_xy_min, ECAL_xy_max  # Define the fixed range for group 1
+        df[group_1] = (df[group_1] - min_val_1) / (max_val_1 - min_val_1)
 
-        # Group 2: Shared scaling for 'zo' and 'ze'
-        group_2 = ['zo', 'ze']
-        group_2_values = df[group_2].values.flatten()  # Flatten to find global min and max
-        min_val = group_2_values.min()
-        max_val = group_2_values.max()
-        df[group_2] = (df[group_2] - min_val) / (max_val - min_val)
+        # Group 2: Shared scaling for 'zo', 'ze', 'centroid_z'
+        group_2 = ['zo', 'ze', 'centroid_z']
+        min_val_2, max_val_2 = ECAL_z_min, ECAL_z_max  # Define the fixed range for group 2
+        df[group_2] = (df[group_2] - min_val_2) / (max_val_2 - min_val_2)
 
-        # Other columns to scale individually
-        other_columns = [col for col in columns_to_scale if col not in group_1 + group_2]
-        
-        df[other_columns] = self.scaler.fit_transform(df[other_columns])
+        # Group 3: Shared scaling for energy columns
+        group_3 = ['energy']
+        min_val_3, max_val_3 = ECAL_energy_min, ECAL_energy_max  # Define the fixed range for group 3
+        df[group_3] = (df[group_3] - min_val_3) / (max_val_3 - min_val_3)
+
+        # Group 4: Shared scaling for time columns
+        group_4 = ['time'] 
+        min_val_4, max_val_4 = ECAL_time_min, ECAL_time_max  # Define the fixed range for group 4
+        df[group_4] = (df[group_4] - min_val_4) / (max_val_4 - min_val_4)
 
         return df
 
@@ -303,7 +305,7 @@ class TrainData:
             'energy', 'time', 'xo', 'yo', 'zo', 'xe', 'ye', 'ze',
             'layer_1', 'layer_2', 'layer_3', 'layer_4',
             'layer_5', 'layer_6', 'layer_7', 'layer_8', 'layer_9', 
-            'centroid_x', 'centroid_y', 'is_3way_same_group', 'is_2way_same_group', 'is_3way_cross_group', 'is_2way_cross_group',
+            'centroid_x', 'centroid_y', 'centroid_z', 'is_3way_same_group', 'is_2way_same_group', 'is_3way_cross_group', 'is_2way_cross_group',
             'sector_1', 'sector_2', 'sector_3', 
             'sector_4','sector_5', 'sector_6', 
             'rec_pid', 'pindex', 'mc_pid','unique_otid'
@@ -352,17 +354,31 @@ class TrainData:
         if maxN > 0:
             data = data[:maxN]
 
-        X = data[:, :, :29]
+        X = data[:, :, :30]
         y = data[:, :, -1:]
-        misc = data[:, :, 29:-1]
+        misc = data[:, :, 30:-1]
 
         return X, y, misc
 
     
     
     
-    
-def load_train_test_data(directory, batch_size, num_train_batches=None, num_test_batches=None):
+def load_unzip_data(h5_filename):
+    with h5py.File(h5_filename,'r') as hf:
+        keys = list(hf.keys())
+        if "test_X" in keys: # In `process_ecal_data_tensors.py` we assign .h5 files to either train or test data
+                             # Future plans should NOT do this...
+            X = hf["test_X"][:]
+            y = hf["test_y"][:]
+            misc = hf["test_misc"][:]
+        else:
+            X = hf["train_X"][:]
+            y = hf["train_y"][:]
+            misc = hf["train_misc"][:]
+    return (X,y,misc)
+
+
+def load_zip_train_test_data(directory, batch_size, num_train_batches=None, num_test_batches=None):
     # Define filenames
     train_filename = os.path.join(directory, 'dataset_train.h5')
     test_filename = os.path.join(directory, 'dataset_test.h5')
@@ -380,7 +396,7 @@ def load_train_test_data(directory, batch_size, num_train_batches=None, num_test
                     yield dataset[i:i+batch_size]
         
         if "_X" in dataset_name:
-            shape = (None, 100, 29)
+            shape = (None, 100, 30)
         elif "_y" in dataset_name:
             shape = (None, 100, 1)
         else:
@@ -392,6 +408,13 @@ def load_train_test_data(directory, batch_size, num_train_batches=None, num_test
         )
         return dataset
 
+    # Get the number of samples in the train and test datasets
+    with h5py.File(train_filename, 'r') as hf:
+        train_size = len(hf['train_X'])  # Get the number of training samples
+
+    with h5py.File(test_filename, 'r') as hf:
+        test_size = len(hf['test_X'])  # Get the number of testing samples
+
     # Load training components with optional limit on number of batches
     train_X_data = load_data_component_in_batches(train_filename, batch_size, 'train_X', num_train_batches)
     train_y_data = load_data_component_in_batches(train_filename, batch_size, 'train_y', num_train_batches)
@@ -402,4 +425,5 @@ def load_train_test_data(directory, batch_size, num_train_batches=None, num_test
     test_y_data = load_data_component_in_batches(test_filename, batch_size, 'test_y', num_test_batches)
     test_misc_data = load_data_component_in_batches(test_filename, batch_size, 'test_misc', num_test_batches)
 
-    return (train_X_data, train_y_data, train_misc_data), (test_X_data, test_y_data, test_misc_data)
+    # Return the datasets along with the sizes
+    return (train_X_data, train_y_data, train_misc_data), (test_X_data, test_y_data, test_misc_data), train_size-1, test_size-1
