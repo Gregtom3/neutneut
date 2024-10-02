@@ -12,10 +12,12 @@ def check_for_nans(tensor, message):
 def safe_norm(x, epsilon=1e-12, axis=None):
     return tf.sqrt(tf.reduce_sum(x ** 2, axis=axis) + epsilon)
 
+
 def condensation_loss(
     *,
     q_min: float,
     object_id: tf.Tensor,
+    event_id: tf.Tensor = None,
     beta: tf.Tensor,
     x: tf.Tensor,
     weights: tf.Tensor = None,
@@ -28,37 +30,47 @@ def condensation_loss(
     
     q_min = tf.cast(q_min, tf.float32)
     object_id = tf.reshape(object_id, (-1,))
+    if event_id is None:
+        event_id = tf.ones_like(object_id)
+    else:
+        event_id  = tf.reshape(event_id,(-1,))
+        
     beta = tf.cast(beta, tf.float32)
-    #beta = tf.clip_by_value(beta,0.001,0.999)
     x = tf.cast(x, tf.float32)
-    #x = tf.clip_by_value(x,-0.0001,0.0001)
-    
     weights = tf.cast(weights, tf.float32)
-    check_for_nans(beta, "NaN detected after beta casting and clipping")
-    check_for_nans(x, "NaN detected after x casting")
     
     not_noise = object_id > noise_threshold
     unique_oids, _ = tf.unique(object_id[not_noise])
     
     q = tf.cast(tf.math.atanh(beta) ** 2 + q_min, tf.float32)
-    check_for_nans(q, "NaN detected after calculating q")
     
-    mask_att = tf.cast(object_id[:, None] == unique_oids[None, :], tf.float32)
-    mask_rep = tf.cast(object_id[:, None] != unique_oids[None, :], tf.float32)
+    # Adjust the masks to ensure compatible shapes
+    mask_att = tf.cast((object_id[:, None] == unique_oids[None, :]), tf.float32)
+    mask_rep = tf.cast((object_id[:, None] != unique_oids[None, :]), tf.float32) 
+
+    # Get sorted indices of object_id
+    sorted_indices = tf.argsort(object_id)
+    
+    # Sort object_id and event_id according to sorted indices
+    sorted_object_id = tf.gather(object_id, sorted_indices)
+    sorted_event_id = tf.gather(event_id, sorted_indices)
+    
+    # Find first occurrence of each unique_oid
+    first_occurrence_indices = tf.searchsorted(sorted_object_id, unique_oids)
+    
+    # Gather the corresponding event_id for the first occurrence of each unique_oid
+    unique_event_ids = tf.gather(sorted_event_id, first_occurrence_indices)
+    
+    mask_evt = tf.cast(event_id[:,None]   == unique_event_ids[None,:], tf.float32)
+    mask_rep = mask_rep * mask_evt
     
     alphas = tf.argmax(beta * mask_att, axis=0)
     beta_k = tf.gather(beta, alphas)
     q_k = tf.gather(q, alphas)
     x_k = tf.gather(x, alphas)
     
-    check_for_nans(beta_k, "NaN detected after gathering beta_k")
-    check_for_nans(q_k, "NaN detected after gathering q_k")
-    check_for_nans(x_k, "NaN detected after gathering x_k")
-    
     dist_j_k = safe_norm(x[None, :, :] - x_k[:, None, :], axis=-1)
     
-    check_for_nans(dist_j_k, "NaN detected after calculating dist_j_k")
-
     v_att_k = tf.math.divide_no_nan(
         tf.reduce_sum(
             q_k
@@ -72,13 +84,11 @@ def condensation_loss(
     )
     
     
-    check_for_nans(v_att_k, "NaN detected after calculating v_att_k")
 
     v_att = tf.math.divide_no_nan(
         tf.reduce_sum(v_att_k), tf.cast(tf.shape(unique_oids)[0], tf.float32)
     )
-    check_for_nans(v_att, "NaN detected after calculating v_att")
-    
+
     v_rep_k = tf.math.divide_no_nan(
         tf.reduce_sum(
             q_k
@@ -90,12 +100,10 @@ def condensation_loss(
         ),
         tf.reduce_sum(mask_rep, axis=0) + 1e-9,
     )
-    check_for_nans(v_rep_k, "NaN detected after calculating v_rep_k")
-
+    
     v_rep = tf.math.divide_no_nan(
         tf.reduce_sum(v_rep_k), tf.cast(tf.shape(unique_oids)[0], tf.float32)
     )
-    check_for_nans(v_rep, "NaN detected after calculating v_rep")
 
     coward_loss_k = 1.0 - beta_k
     coward_loss = tf.math.divide_no_nan(
@@ -103,29 +111,10 @@ def condensation_loss(
         tf.cast(tf.shape(unique_oids)[0], tf.float32),
     )
     
-    check_for_nans(coward_loss, "NaN detected after calculating coward_loss")
-
     noise_loss = tf.math.divide_no_nan(
         tf.reduce_sum(beta[object_id <= noise_threshold]),
         tf.reduce_sum(tf.cast(object_id <= noise_threshold, tf.float32)),
     )
-    check_for_nans(noise_loss, "NaN detected after calculating noise_loss")
-    
-#     return {
-#         "attractive":         tf.reduce_sum(
-#             #q_k
-#             #* tf.transpose(q)
-#             #* tf.transpose(mask_rep)
-#             #* tf.math.maximum(0.00001, 1.0 - dist_j_k),
-#             #tf.math.maximum(0.00001, 1.0 - dist_j_k),
-#             dist_j_k,
-#             axis=0,
-#         ),
-        
-#         "repulsive": 0.1,
-#         "coward": 0.1,
-#         "noise": 0.1,
-#     }
 
     return {
         "attractive": v_att,
@@ -135,37 +124,45 @@ def condensation_loss(
     }
 
             
-def calculate_losses(y_true, y_pred, q_min):
-    object_id = tf.cast(y_true[:, :, 0], tf.int32)
-
-    beta = tf.reshape(y_pred[:, :, 0:1], [-1, 1])
-    x = tf.reshape(y_pred[:, :, 1:3], [-1, 2])
-
-    # Compute condensation loss
+def calculate_losses(y_true, y_pred, q_min, batch_size, K, single_event_loss=True):
+    object_id = tf.cast(y_true[:, :, 0], tf.int32)  # (batch_size, 100, 1)
+    beta      = y_pred[:, :, 0:1]                   # (batch_size, 100, 1)
+    x         = y_pred[:, :, 1:3]                   # (batch_size, 100, 2)
+    if single_event_loss==True:
+        event_id = tf.tile(tf.range(batch_size)[:, tf.newaxis], [1, K])
+    else:
+        event_id = None
+    object_id = tf.reshape(object_id,[-1])
+    beta      = tf.reshape(beta,[-1,1])
+    x         = tf.reshape(x,[-1,2])
     loss_dict = condensation_loss(q_min=q_min,
-                                  object_id=object_id,
-                                  beta=beta,
-                                  x=x,
-                                  noise_threshold=-1)
+                                   object_id=object_id,
+                                   event_id=event_id,
+                                   beta=beta,
+                                   x=x,
+                                   noise_threshold=-1)
 
     return loss_dict
 
-
 class CustomLoss(tf.keras.losses.Loss):
-    def __init__(self, q_min=0.1, reduction=tf.keras.losses.Reduction.NONE, name="custom_loss"):
+    def __init__(self, q_min=0.1, reduction=tf.keras.losses.Reduction.SUM, name="custom_loss", single_event_loss=True):
         super(CustomLoss, self).__init__(reduction=reduction, name=name)
         self.q_min = q_min
+        self.single_event_loss = single_event_loss
 
     def call(self, y_true, y_pred):
-        loss_dict = calculate_losses(y_true, y_pred, self.q_min)
-
-        # Combine the losses
-        total_loss = (loss_dict['attractive'] +
-                      loss_dict['repulsive'] +
-                      loss_dict['coward'] +
-                      loss_dict['noise'])
-
-        return total_loss
+            batch_size = tf.shape(y_true)[0] 
+            K          = tf.shape(y_true)[1]
+            loss_dict = calculate_losses(y_true, y_pred, self.q_min, batch_size, K, self.single_event_loss)
+    
+    
+            # Combine the losses
+            total_loss = (loss_dict['attractive'] +
+                          loss_dict['repulsive'] +
+                          loss_dict['coward'] +
+                          loss_dict['noise'])
+    
+            return total_loss
 
     def get_config(self):
         config = super(CustomLoss, self).get_config()
@@ -183,7 +180,9 @@ class AttractiveLossMetric(tf.keras.metrics.Mean):
         self.q_min = q_min
 
     def update_state(self, y_true, y_pred, sample_weight=None):
-        loss_dict = calculate_losses(y_true, y_pred, self.q_min)
+        batch_size = tf.shape(y_true)[0] 
+        K          = tf.shape(y_true)[1]
+        loss_dict = calculate_losses(y_true, y_pred, self.q_min, batch_size, K)
         return super(AttractiveLossMetric, self).update_state(loss_dict['attractive'], sample_weight)
 
 class RepulsiveLossMetric(tf.keras.metrics.Mean):
@@ -192,7 +191,9 @@ class RepulsiveLossMetric(tf.keras.metrics.Mean):
         self.q_min = q_min
 
     def update_state(self, y_true, y_pred, sample_weight=None):
-        loss_dict = calculate_losses(y_true, y_pred, self.q_min)
+        batch_size = tf.shape(y_true)[0] 
+        K          = tf.shape(y_true)[1]
+        loss_dict = calculate_losses(y_true, y_pred, self.q_min, batch_size, K)
         return super(RepulsiveLossMetric, self).update_state(loss_dict['repulsive'], sample_weight)
 
 class CowardLossMetric(tf.keras.metrics.Mean):
@@ -201,7 +202,9 @@ class CowardLossMetric(tf.keras.metrics.Mean):
         self.q_min = q_min
 
     def update_state(self, y_true, y_pred, sample_weight=None):
-        loss_dict = calculate_losses(y_true, y_pred, self.q_min)
+        batch_size = tf.shape(y_true)[0] 
+        K          = tf.shape(y_true)[1]
+        loss_dict = calculate_losses(y_true, y_pred, self.q_min, batch_size, K)
         return super(CowardLossMetric, self).update_state(loss_dict['coward'], sample_weight)
 
 class NoiseLossMetric(tf.keras.metrics.Mean):
@@ -210,5 +213,7 @@ class NoiseLossMetric(tf.keras.metrics.Mean):
         self.q_min = q_min
 
     def update_state(self, y_true, y_pred, sample_weight=None):
-        loss_dict  = calculate_losses(y_true, y_pred, self.q_min)
+        batch_size = tf.shape(y_true)[0] 
+        K          = tf.shape(y_true)[1]
+        loss_dict = calculate_losses(y_true, y_pred, self.q_min, batch_size, K)
         return super(NoiseLossMetric, self).update_state(loss_dict['noise'], sample_weight)

@@ -57,9 +57,13 @@ class ECALDataAnalyzer:
                 else:  # "rec" mode
                     ECAL_hits = reader.get_dict("ECAL::hits")
 
-                if len(ECAL_hits) == 0:  # Skip events without ECAL hits
+                if len(ECAL_hits) == 0:  # Skip events without ECAL hits, but you must put in a single row to keep the correct dataframe length
+                    row = [
+                        event_number, -1, -1, -1, -1, -1, -1, -1,
+                        -1, -1, -1, -1, -1, -1, -1, -1
+                    ]
+                    csv_writer.writerow(row)
                     continue
-
                 REC_cal = reader.get_dict("REC::Calorimeter")
                 REC_parts = reader.get_dict("REC::Particle")
 
@@ -87,7 +91,6 @@ class ECALDataAnalyzer:
                         hit['xo'], hit['yo'], hit['zo'], hit['xe'], hit['ye'], hit['ze'], hit['rec_pid'], hit['pindex']
                     ]
                     csv_writer.writerow(row)
-                    
 
     def process_hipo(self):
         """
@@ -113,14 +116,9 @@ class ECALDataAnalyzer:
         # Initialize one-hot encoded columns for intersection types
         df['is_3way_same_group'] = 0
         df['is_2way_same_group'] = 0
-        df['is_3way_cross_group'] = 0
-        df['is_2way_cross_group'] = 0
 
         # Process each event_number and sector group
         df = self.process_groups(df, R)
-
-        # Process cross-layer group intersections for remaining strips
-        df = self.process_cross_groups(df, R)
 
         # Save the updated DataFrame back to the original CSV file
         df.to_csv(self.output_filename, index=False)
@@ -190,50 +188,9 @@ class ECALDataAnalyzer:
                     df = self.update_centroid(df, event, matched_strips, best_centroid, 'is_2way_same_group')
 
         return df
-
-    def process_cross_groups(self, df, R):
-        """
-        Process strips that haven't found a centroid within their layer group, searching across groups.
-
-        Parameters:
-        -----------
-        df : pd.DataFrame
-            The DataFrame being updated.
-        R : float
-            The maximum allowed distance for considering a 3-way intersection as valid.
-
-        Returns:
-        --------
-        pd.DataFrame
-            The updated DataFrame.
-        """
-        # Group the data by event number and sector
-        grouped = df.groupby(['event', 'sector'])
-
-        # Iterate through each event and sector group
-        for (event, sector), group in tqdm(grouped):
-            # Separate the layer groups within the current event and sector
-            layer_groups = {n_start: group[group['layer'].isin([n_start, n_start + 1, n_start + 2])]
-                            for n_start in [1, 4, 7]}
-
-            for n_start, layer_group in layer_groups.items():
-                for _, strip_x in layer_group.iterrows():
-                    if strip_x['centroid_x'] == 0 and strip_x['centroid_y'] == 0:
-                        # Search for 3-way intersections across non-matching layer groups
-                        max_energy, best_centroid, matched_strips = self.find_best_3way_intersection(strip_x, group, R, cross_group=True)
-                        if max_energy > 0:
-                            df = self.update_centroid(df, strip_x['event'], matched_strips, best_centroid, 'is_3way_cross_group')
-                            continue
-
-                        # If no 3-way found, search for 2-way intersections across all layer groups
-                        max_energy, best_centroid, matched_strips = self.find_best_2way_intersection(strip_x, group, cross_group=True)
-                        if max_energy > 0:
-                            df = self.update_centroid(df, strip_x['event'], matched_strips, best_centroid, 'is_2way_cross_group')
-
-        return df
     
 
-    def find_best_3way_intersection(self, strip_x, layer_group, R, cross_group=False):
+    def find_best_3way_intersection(self, strip_x, layer_group, R):
         """
         Find the most energetic 3-way intersection for a given strip.
 
@@ -242,11 +199,9 @@ class ECALDataAnalyzer:
         strip_x : pd.Series
             The strip being processed.
         layer_group : pd.DataFrame
-            The subset of data within the layer group or cross groups.
+            The subset of data within the layer group
         R : float
             The maximum allowed distance for considering a 3-way intersection as valid.
-        cross_group : bool
-            If True, search across all layers, not just within the layer group.
 
         Returns:
         --------
@@ -303,7 +258,7 @@ class ECALDataAnalyzer:
 
         return max_energy, best_centroid, matched_strips
 
-    def find_best_2way_intersection(self, strip_x, layer_group, cross_group=False):
+    def find_best_2way_intersection(self, strip_x, layer_group):
         """
         Find the most energetic 2-way intersection for a given strip.
 
@@ -312,10 +267,8 @@ class ECALDataAnalyzer:
         strip_x : pd.Series
             The strip being processed.
         layer_group : pd.DataFrame
-            The subset of data within the layer group or cross groups.
-        cross_group : bool
-            If True, search across all layers, not just within the layer group.
-
+            The subset of data within the layer group
+            
         Returns:
         --------
         tuple : (max_energy, best_centroid, matched_strips)
@@ -367,8 +320,7 @@ class ECALDataAnalyzer:
         centroid : np.array
             The centroid coordinates to set.
         intersection_type : str
-            The type of intersection (one of 'is_3way_same_group', 'is_2way_same_group', 
-            'is_3way_cross_group', 'is_2way_cross_group').
+            The type of intersection (one of 'is_3way_same_group', 'is_2way_same_group').
 
         Returns:
         --------

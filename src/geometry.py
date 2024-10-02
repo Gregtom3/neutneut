@@ -102,6 +102,12 @@ def line_intersection(a1, b1, a2, b2):
     numpy.ndarray or None
         The intersection point of the two line segments if they intersect, otherwise None.
     """
+    
+    xmin = np.amin([a1[0], a1[0] + b1[0], a2[0], a2[0] + b2[0]])
+    xmax = np.amax([a1[0], a1[0] + b1[0], a2[0], a2[0] + b2[0]])
+    ymin = np.amin([a1[1], a1[1] + b1[1], a2[1], a2[1] + b2[1]])
+    ymax = np.amax([a1[1], a1[1] + b1[1], a2[1], a2[1] + b2[1]])
+    
     b1 = b1 / np.linalg.norm(b1)
     b2 = b2 / np.linalg.norm(b2)
     a_diff = a2 - a1
@@ -112,11 +118,10 @@ def line_intersection(a1, b1, a2, b2):
     else:
         lambda_ = (a_diff[0] * b2[1] - a_diff[1] * b2[0]) / det
         intersection = a1 + lambda_ * b1
-        
         # Check if the intersection point lies within the bounding box of both segments
         if (
-            np.amin([a1[0], a1[0] + b1[0], a2[0], a2[0] + b2[0]]) <= intersection[0] <= np.amax([a1[0], a1[0] + b1[0], a2[0], a2[0] + b2[0]]) and
-            np.amin([a1[1], a1[1] + b1[1], a2[1], a2[1] + b2[1]]) <= intersection[1] <= np.amax([a1[1], a1[1] + b1[1], a2[1], a2[1] + b2[1]])
+            xmin <= intersection[0] <= xmax and
+            ymin <= intersection[1] <= ymax
         ):
             return intersection
         else:

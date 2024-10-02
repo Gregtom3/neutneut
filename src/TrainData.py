@@ -41,7 +41,6 @@ class DataPreprocessor:
             
             # Remove rows containing any NaN values
             df = df.dropna()
-            
         # Group by file_number and file_event
         grouped = df.groupby(['file_number', 'file_event'])
 
@@ -218,6 +217,7 @@ class TrainData:
 
         # Automatically load, merge, preprocess, and split the data upon initialization
         self._load_and_merge_csvs()
+        #raise ValueError()
         self._preprocess_data()
 
 
@@ -244,20 +244,17 @@ class TrainData:
 
             # Adjust the otid values for uniqueness across files, skipping -1
             non_negative_mask = df['unique_otid'] != -1
-
             # Combine file_event, otid, and file_number to ensure uniqueness
             df.loc[non_negative_mask, 'unique_otid'] = (
                 df.loc[non_negative_mask, 'file_event'].astype(str) + "_" +
                 df.loc[non_negative_mask, 'otid'].astype(str) + "_" +
                 df.loc[non_negative_mask, 'file_number'].astype(str)
             ).astype('category').cat.codes + unique_otid_offset
-
             # Update the offset for the next file, skipping the -1 value
             if df.loc[non_negative_mask, 'unique_otid'].max() != -1:
                 unique_otid_offset = df.loc[non_negative_mask, 'unique_otid'].max() + 1
 
             merged_data.append(df)
-
         self.data = pd.concat(merged_data, ignore_index=True)
 
         if self.data.empty:
@@ -275,7 +272,7 @@ class TrainData:
             'energy', 'time', 'xo', 'yo', 'zo', 'xe', 'ye', 'ze',
             'layer_1', 'layer_2', 'layer_3', 'layer_4',
             'layer_5', 'layer_6', 'layer_7', 'layer_8', 'layer_9', 
-            'centroid_x', 'centroid_y', 'centroid_z', 'is_3way_same_group', 'is_2way_same_group', 'is_3way_cross_group', 'is_2way_cross_group',
+            'centroid_x', 'centroid_y', 'centroid_z', 'is_3way_same_group', 'is_2way_same_group',
             'sector_1', 'sector_2', 'sector_3', 
             'sector_4','sector_5', 'sector_6', 
             'rec_pid', 'pindex', 'mc_pid','unique_otid'
@@ -305,9 +302,9 @@ class TrainData:
         else:
             data = self.data
         
-        X = data[:, :, :30]
+        X = data[:, :, :28]
         y = data[:, :, -1:]
-        misc = data[:, :, 30:-1]
+        misc = data[:, :, 28:-1]
 
         return X, y, misc
 
@@ -319,10 +316,13 @@ def load_unzip_data(h5_filename):
     return (X,y,misc)
 
 
-def load_zip_train_test_data(directory, batch_size, num_train_batches=None, num_test_batches=None):
+def load_zip_train_test_data(directory, batch_size, num_train_batches=None, num_test_batches=None, max_files = None):
     # List all .h5 files in the directory
     h5_files = [os.path.join(directory, f) for f in os.listdir(directory) if f.endswith('.h5')]
-
+    if max_files != None:
+        max_files = np.amin([max_files,len(h5_files)])
+        h5_files = h5_files[:max_files]
+    
     # Check if there is only a single file
     single_file_split = len(h5_files) == 1
 
@@ -364,7 +364,7 @@ def load_zip_train_test_data(directory, batch_size, num_train_batches=None, num_
         
         # Determine the shape based on the dataset_name (adjust shape based on actual data)
         if "X" in dataset_name:
-            shape = (None, 100, 30)  # Example shape for 'X' data
+            shape = (None, 100, 28)  # Example shape for 'X' data
         elif "y" in dataset_name:
             shape = (None, 100, 1)   # Example shape for 'y' data
         else:
@@ -395,7 +395,7 @@ def load_zip_train_test_data(directory, batch_size, num_train_batches=None, num_
 
         # Determine the shape based on the dataset_name
         if "X" in dataset_name:
-            shape = (None, 100, 30)
+            shape = (None, 100, 28)
         elif "y" in dataset_name:
             shape = (None, 100, 1)
         else:

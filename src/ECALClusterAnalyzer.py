@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-import hipopy as hp  
 import shutil
 class ECALClusterAnalyzer:
     """
@@ -8,7 +7,7 @@ class ECALClusterAnalyzer:
     containing information about the clusters for each event.
     """
 
-    def __init__(self, input_df, original_hipofile, clustering_variable='pindex'):
+    def __init__(self, input_df, clustering_variable='pindex'):
         """
         Initialize the analyzer with the event DataFrame and define the clustering variable.
         
@@ -16,16 +15,10 @@ class ECALClusterAnalyzer:
         -----------
         input_df : pd.DataFrame
             The DataFrame containing the clustering results
-        original_hipofile : str
-            The path to the original hipo file where the cluster data will be written.
         clustering_variable : str
             The column name used to cluster the data within each event (default is 'pindex').
         """
         self.event_df = input_df
-        self.original_hipofile = original_hipofile
-        self.new_hipofile = self.original_hipofile.replace(".hipo","_OC.hipo")
-        # Copy new_hipofile
-        shutil.copy2(self.original_hipofile, self.new_hipofile)
         self.clustering_variable = clustering_variable
         self.clusters_df = pd.DataFrame({
             'event': [0],
@@ -90,9 +83,7 @@ class ECALClusterAnalyzer:
         """
         priority_columns = [
             'is_3way_same_group',
-            'is_2way_same_group',
-            'is_3way_cross_group',
-            'is_2way_cross_group'
+            'is_2way_same_group'
         ]
 
         # Iterate through each priority column in the given order
@@ -111,7 +102,7 @@ class ECALClusterAnalyzer:
                 centroid = np.array([avg_centroid_x, avg_centroid_y, avg_centroid_z])
                 energy = self.calculate_cluster_energy(priority_group, centroid)
                 time = self.calculate_cluster_time(priority_group, centroid)
-    
+                
                 # Default vars
                 status = 0
                 widthU = 0
@@ -126,7 +117,7 @@ class ECALClusterAnalyzer:
                 coordV = 0
                 coordW = 0
 
-                return {
+                return  {
                     'uid': uid,
                     'status': status,
                     'layer': layer,
@@ -216,141 +207,4 @@ class ECALClusterAnalyzer:
         
         return self.clusters_df
 
-    def write_hipo_file(self):
-        """
-        Write the cluster data into a new hipo file using the generated clusters DataFrame.
-        """
-        # Define the bank names and types for ECAL::clusters_OC
-        cluster_bank = "ECAL::clusters_OC"
-        cluster_names = ["id", "status", "sector", "layer", "x", "y", "z", "energy", "time", 
-                         "widthU", "widthV", "widthW", "idU", "idV", "idW", "coordU", "coordV", "coordW"]
-        cluster_names_and_types = {
-            "id": "S", "status": "S", "sector": "B", "layer": "B", "x": "F", "y": "F", "z": "F", 
-            "energy": "F", "time": "F", "widthU": "F", "widthV": "F", "widthW": "F", 
-            "idU": "B", "idV": "B", "idW": "B", "coordU": "I", "coordV": "I", "coordW": "I"
-        }
-
-        # Define the bank names and types for ECAL::moments_OC
-        moments_bank = "ECAL::moments_OC"
-        moments_names = ["distU", "distV", "distW", "m1u", "m1v", "m1w", "m2u", "m2v", "m2w", "m3u", "m3v", "m3w"]
-        moments_names_and_types = {
-            "distU": "F", "distV": "F", "distW": "F", "m1u": "F", "m1v": "F", "m1w": "F", 
-            "m2u": "F", "m2v": "F", "m2w": "F", "m3u": "F", "m3v": "F", "m3w": "F"
-        }
-
-        # Define the bank names and types for ECAL::calib_OC
-        calib_bank = "ECAL::calib_OC"
-        calib_names = ["sector", "layer", "size", "dbstU", "dbstV", "dbstW", "rawEU", "rawEV", "rawEW", 
-                       "recEU", "recEV", "recEW", "recDTU", "recDTV", "recDTW", "recFTU", "recFTV", "recFTW"]
-        calib_names_and_types = {
-            "sector": "B", "layer": "B", "size": "F", "dbstU": "S", "dbstV": "S", "dbstW": "S", 
-            "rawEU": "F", "rawEV": "F", "rawEW": "F", "recEU": "F", "recEV": "F", "recEW": "F",
-            "recDTU": "F", "recDTV": "F", "recDTW": "F", "recFTU": "F", "recFTV": "F", "recFTW": "F"
-        }
-
-        # Open the new hipo file
-        file = hp.recreate(self.new_hipofile)
-        file.newTree(cluster_bank, cluster_names_and_types)
-        file.open()
-
-        # Iterate through events and write data to the hipo file
-        for event, _ in enumerate(file):
-            event_group = self.clusters_df[self.clusters_df['event'] == event]
-
-            # Cluster data
-            cluster_data = [
-                [int(uid) for uid in event_group["uid"].tolist()],            # 'id' should be short ('S')
-                [int(status) for status in event_group["status"].tolist()],   # 'status' should be short ('S')
-                [int(sector) for sector in event_group["sector"].tolist()],   # 'sector' should be byte ('B')
-                [int(layer) for layer in event_group["layer"].tolist()],      # 'layer' should be byte ('B')
-                [float(x) for x in event_group["x"].tolist()],                # 'x' should be float ('F')
-                [float(y) for y in event_group["y"].tolist()],                # 'y' should be float ('F')
-                [float(z) for z in event_group["z"].tolist()],                # 'z' should be float ('F')
-                [float(energy) for energy in event_group["energy"].tolist()], # 'energy' should be float ('F')
-                [float(time) for time in event_group["time"].tolist()],       # 'time' should be float ('F')
-                [float(widthU) for widthU in event_group["widthU"].tolist()], # 'widthU' should be float ('F')
-                [float(widthV) for widthV in event_group["widthV"].tolist()], # 'widthV' should be float ('F')
-                [float(widthW) for widthW in event_group["widthW"].tolist()], # 'widthW' should be float ('F')
-                [int(idU) for idU in event_group["idU"].tolist()],            # 'idU' should be byte ('B')
-                [int(idV) for idV in event_group["idV"].tolist()],            # 'idV' should be byte ('B')
-                [int(idW) for idW in event_group["idW"].tolist()],            # 'idW' should be byte ('B')
-                [int(coordU) for coordU in event_group["coordU"].tolist()],   # 'coordU' should be integer ('I')
-                [int(coordV) for coordV in event_group["coordV"].tolist()],   # 'coordV' should be integer ('I')
-                [int(coordW) for coordW in event_group["coordW"].tolist()]    # 'coordW' should be integer ('I')
-            ]
-
-            # Write data for the event to the clusters bank
-            file.update({cluster_bank: cluster_data})
-
-        # Close the hipo file
-        file.close() 
-        
-        file = hp.recreate(self.new_hipofile)
-        file.newTree(moments_bank, moments_names_and_types)
-        file.open()
-        # Iterate through events and write data to the hipo file
-        for event, _ in enumerate(file):
-            event_group = self.clusters_df[self.clusters_df['event'] == event]
-
-            # Moments data, all zeros, with the same length as the cluster data entries
-            num_entries = len(event_group["uid"])
-            moments_data = [
-                [0.0] * num_entries,  # 'distU' should be float ('F')
-                [0.0] * num_entries,  # 'distV' should be float ('F')
-                [0.0] * num_entries,  # 'distW' should be float ('F')
-                [0.0] * num_entries,  # 'm1u' should be float ('F')
-                [0.0] * num_entries,  # 'm1v' should be float ('F')
-                [0.0] * num_entries,  # 'm1w' should be float ('F')
-                [0.0] * num_entries,  # 'm2u' should be float ('F')
-                [0.0] * num_entries,  # 'm2v' should be float ('F')
-                [0.0] * num_entries,  # 'm2w' should be float ('F')
-                [0.0] * num_entries,  # 'm3u' should be float ('F')
-                [0.0] * num_entries,  # 'm3v' should be float ('F')
-                [0.0] * num_entries   # 'm3w' should be float ('F')
-            ]
-
-            # Write data for the event to the moments bank
-            file.update({moments_bank: moments_data})
-
-        # Close the hipo file
-        file.close()
-        
-        file = hp.recreate(self.new_hipofile)
-        file.newTree(calib_bank, calib_names_and_types)
-        file.open()
-        # Iterate through events and write data to the hipo file
-        for event, _ in enumerate(file):
-            event_group = self.clusters_df[self.clusters_df['event'] == event]
-
-            # Calib data, all zeros, same length as the cluster data
-            num_entries = len(event_group["uid"])
-            calib_data = [
-                [0] * num_entries,  # 'sector' as byte
-                [0] * num_entries,  # 'layer' as byte
-                [0.0] * num_entries,  # 'size' as float
-                [0] * num_entries,  # 'dbstU' as short
-                [0] * num_entries,  # 'dbstV' as short
-                [0] * num_entries,  # 'dbstW' as short
-                [0.0] * num_entries,  # 'rawEU' as float
-                [0.0] * num_entries,  # 'rawEV' as float
-                [0.0] * num_entries,  # 'rawEW' as float
-                [0.0] * num_entries,  # 'recEU' as float
-                [0.0] * num_entries,  # 'recEV' as float
-                [0.0] * num_entries,  # 'recEW' as float
-                [0.0] * num_entries,  # 'recDTU' as float
-                [0.0] * num_entries,  # 'recDTV' as float
-                [0.0] * num_entries,  # 'recDTW' as float
-                [0.0] * num_entries,  # 'recFTU' as float
-                [0.0] * num_entries,  # 'recFTV' as float
-                [0.0] * num_entries   # 'recFTW' as float
-            ]
-            
-            # Write data for the event to the calib bank
-            file.update({calib_bank: calib_data})
-            
-        # Close the hipo file
-        file.close()
-            
-    def run(self):
-        self.create_clusters()
-        self.write_hipo_file()
+    

@@ -1,5 +1,5 @@
 # Number of model features
-N_feat = 30
+N_feat = 28
 
 # Maximum population of strips per event
 K = 100
@@ -14,7 +14,7 @@ model_x_names = [
 'layer_1', 'layer_2', 'layer_3', 'layer_4',
 'layer_5', 'layer_6', 'layer_7', 'layer_8', 'layer_9', 
 'centroid_x', 'centroid_y', 'centroid_z', 
-'is_3way_same_group', 'is_2way_same_group', 'is_3way_cross_group', 'is_2way_cross_group',
+'is_3way_same_group', 'is_2way_same_group',
 'sector_1', 'sector_2', 'sector_3', 
 'sector_4','sector_5', 'sector_6']
 
@@ -25,12 +25,12 @@ model_y_name = ['unique_otid']
 model_misc_names = ['rec_pid', 'pindex', 'mc_pid']
 
 # Scale range for ECAL time
-ECAL_time_min = 0
-ECAL_time_max = 200
+ECAL_time_min = 0 # 120
+ECAL_time_max = 200 # 260
 
 # Scale range for ECAL energy
-ECAL_energy_min = 0
-ECAL_energy_max = 1
+ECAL_energy_min = 0 # 0
+ECAL_energy_max = 1 # 0.2
 
 # Scale range for ECAL (x,y) values
 ECAL_xy_min = -500

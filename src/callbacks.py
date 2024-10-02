@@ -5,7 +5,7 @@ from Evaluator import Evaluator
 import numpy as np
 import pandas as pd
 class PlotCallback(tf.keras.callbacks.Callback):
-    def __init__(self, X, y, misc, tB, tD, outdir=None):
+    def __init__(self, X, y, misc, tB, tD, outdir=None, version=None):
         super().__init__()
         self.X = X
         self.y = y
@@ -13,7 +13,8 @@ class PlotCallback(tf.keras.callbacks.Callback):
         self.tB = tB
         self.tD = tD
         self.outdir = outdir
-
+        self.version_text = "_"+version if version!=None else "" # Addendum for the pngs
+        
     def on_epoch_end(self, epoch, logs=None):
         
         evaluator = Evaluator.from_data(self.X, 
@@ -22,12 +23,12 @@ class PlotCallback(tf.keras.callbacks.Callback):
         evaluator.load_model(self.model)
         evaluator.predict()
         evaluator.cluster(self.tB, self.tD)
-        
+        loss_df = evaluator.get_loss_df()
         for n in range(self.X.shape[0]):
-            plotter = ModelEcalPlotter(evaluator.get_event_dataframe(n))
-            outfile = f"{self.outdir}/ECAL_{epoch:05}_ev{n}.png" 
-
-            suptitle = f"Epoch {epoch:05}\nLoss = {logs.get('loss'):.4f}"
+            plotter = ModelEcalPlotter(evaluator.get_event_dataframe(n), use_clas_calo_scale=True)
+            outfile = f"{self.outdir}/ECAL_{epoch:05}_ev{n}{self.version_text}.png" 
+            ev_loss_df = loss_df.iloc[n]
+            suptitle = f"Epoch {epoch:05}\nEpoch Loss = {logs.get('loss'):.4f}"+"\n"+f"Evt Loss={ev_loss_df.att_loss:.4f}+{ev_loss_df.rep_loss:.4f}+{ev_loss_df.cow_loss:.4f}+{ev_loss_df.nse_loss:.4f}={ev_loss_df.tot_loss:.4f}"
             plotter.plot_all(tD=evaluator.tD,out=outfile,suptitle=suptitle)
 
         print(f"End of epoch {epoch+1}")
