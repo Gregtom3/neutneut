@@ -18,7 +18,7 @@ def main():
     
     args = parser.parse_args()
 
-    
+    print(args.model_path,"*"*500)
     # Load the model
     model = tf.keras.models.load_model(args.model_path, custom_objects={
         'CustomLoss': CustomLoss, 
@@ -29,7 +29,7 @@ def main():
     })
     
     # Setup Evaluator
-    evaluator = Evaluator(args.input_h5)
+    evaluator = Evaluator(args.input_h5, original_hipofile=args.original_hipofile, save_cluster=True)
     
     # Load model into Evaluator
     evaluator.load_model(model)
@@ -40,14 +40,8 @@ def main():
     # Cluster object condensation variables
     evaluator.cluster(args.tB,args.tD)
     
-    # Obtain cluster dataframe
-    cluster_df = evaluator.to_cluster_dataframe()
-    
-    # Initialize ECALClusterAnalyzer with user inputs
-    analyzer = ECALClusterAnalyzer(input_df = cluster_df, original_hipofile=args.original_hipofile, clustering_variable=args.clustering_variable)
-    
-    # Run the analyzer
-    analyzer.run()
+    # Save as hipofile
+    evaluator.write_hipo_file()
     
 if __name__ == "__main__":
     main()

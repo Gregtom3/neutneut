@@ -179,6 +179,10 @@ def create_and_submit_slurm_script(config_subdir, config_idx)
     module purge
     module load python
     source /work/clas12/users/gmat/venv/tensorflow_env/bin/activate
+    which python
+    whereis python
+    python --version
+    pip install hipopy
     python ./tools/train_model.py #{config_subdir}/config.yaml
   SLURM
 

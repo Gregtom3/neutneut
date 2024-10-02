@@ -114,7 +114,7 @@ Dir.glob("#{training_dir}/*.h5").each do |h5_file|
   # Step 0: Clean up intermediate files
   # Avoids errors in recon-util
   puts "Cleaning up intermediate files..."
-  File.delete(cooked_OC_hipo) if File.exist?(cooked_OC_hipo)
+  #File.delete(cooked_OC_hipo) if File.exist?(cooked_OC_hipo)
   File.delete(cooked_OC1_hipo) if File.exist?(cooked_OC1_hipo)
   File.delete(cooked_OC2_hipo) if File.exist?(cooked_OC2_hipo)
   File.delete(final_filtered_hipo) if File.exist?(final_filtered_hipo)
@@ -172,6 +172,7 @@ Dir.glob("#{training_dir}/*.h5").each do |h5_file|
   end
 
   puts "Processing complete for #{h5_file}. \n\n\nFinal HIPO file saved at #{final_filtered_hipo}"
+  exit 1
 end
 
 puts "\t ==> All steps completed successfully for project #{project_name}!"
