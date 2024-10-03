@@ -299,6 +299,7 @@ class Evaluator:
 
             # Copy new_hipofile
             shutil.copy2(self.original_hipofile, self.new_hipofile)
+            print("***** NEW HIPO FILE = ",self.new_hipofile," *********")
 
             # Define the bank names and types for ECAL::clusters_OC
             cluster_bank = "ECAL::clusters_OC"
