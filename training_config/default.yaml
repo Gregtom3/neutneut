@@ -2,12 +2,12 @@ project_directory: ''
 output_dir: ''
 
 # Training parameters
-batch_size: 32
+batch_size: 128
 initial_lr: 0.000001
 max_lr: 0.00001
 step_size: 20
 N_epochs: 100
-patience: 10
+patience: 100
 q_min: 0.1
 tB: 0.1
 tD: 0.25
@@ -15,6 +15,6 @@ ev: 0
 ev_n: 10 
 
 # GravNet model parameters
-N_grav_layers: 12
-N_neighbors: 10
-N_filters: 256
+N_grav_layers: 6
+N_neighbors: 6
+N_filters: 64
