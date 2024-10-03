@@ -25,32 +25,13 @@ class DataPreprocessor:
         -----------
         df : pd.DataFrame
             The DataFrame to preprocess.
-        remove_background : bool
-            If True, polish dataset to remove NaNs, backgrounds, etc.
-        min_particles : int
-            Minimum number of particles per event
         Returns:
         --------
         pd.DataFrame
             The preprocessed DataFrame.
         """
-        if remove_background:
-            # Remove rows where 'otid' is -1 and remove rows where 'centroid_x' or 'centroid_y' is 0
-            df = df[df['otid'] != -1]
-            df = df[(df['centroid_x'] != 0) & (df['centroid_y'] != 0)]
-            
-            # Remove rows containing any NaN values
-            df = df.dropna()
         # Group by file_number and file_event
         grouped = df.groupby(['file_number', 'file_event'])
-
-        # Filter out groups where the number of non- -1 unique otid values is less than min_particles
-        def filter_group(group):
-            non_negative_unique_otid_count = group[group['otid'] != -1]['otid'].nunique()
-            return non_negative_unique_otid_count >= min_particles
-
-        df = grouped.filter(filter_group)
-
         df = self._filter_peak_time(df)
         df = self._one_hot_encode(df, 'sector', 6)
         df = self._one_hot_encode(df, 'layer', 9)
@@ -62,18 +43,20 @@ class DataPreprocessor:
     
     def _filter_peak_time(self, df):
         """
-        Filter rows where peak time is outside the range 0-200.
-
+        Clip the time values in the DataFrame to be within the range ECAL_time_min to ECAL_time_max.
+    
         Parameters:
         -----------
         df : pd.DataFrame
-            The DataFrame to filter.
+            The DataFrame where the 'time' column will be clipped.
+        
         Returns:
         --------
         pd.DataFrame
-            The filtered DataFrame.
+            The DataFrame with 'time' values clipped to the ECAL_time_min and ECAL_time_max range.
         """
-        return df[(df['time'] >= ECAL_time_min) & (df['time'] <= ECAL_time_max)].copy()
+        df['time'] = df['time'].clip(lower=ECAL_time_min, upper=ECAL_time_max)
+        return df
 
     def _rescale_columns(self, df):
         """
@@ -217,7 +200,6 @@ class TrainData:
 
         # Automatically load, merge, preprocess, and split the data upon initialization
         self._load_and_merge_csvs()
-        #raise ValueError()
         self._preprocess_data()
 
 
