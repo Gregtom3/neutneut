@@ -39,26 +39,30 @@ end
 
 project_name = options[:project]
 project_dir = "./projects/#{project_name}"
+slurm_dir = "#{project_dir}/slurm"
 
-# Ensure the project directory exists
-unless Dir.exist?(project_dir)
-  puts "Error: Project directory #{project_dir} does not exist."
-  exit 1
+# Ensure the project and slurm directories exist
+FileUtils.mkdir_p(slurm_dir)
+FileUtils.mkdir_p("#{project_dir}/predict")
+
+# Function to create SLURM file
+def create_slurm_file(slurm_filename, job_name, slurm_dir, slurm_commands)
+  slurm_template = <<-SLURM
+#!/bin/bash
+#SBATCH --account=clas12
+#SBATCH --partition=production
+#SBATCH --mem-per-cpu=2000
+#SBATCH --job-name=#{job_name}
+#SBATCH --cpus-per-task=1
+#SBATCH --time=24:00:00
+#SBATCH --output=#{slurm_dir}/#{slurm_filename}.out
+#SBATCH --error=#{slurm_dir}/#{slurm_filename}.err
+
+#{slurm_commands}
+  SLURM
+
+  File.open("#{slurm_dir}/#{slurm_filename}", "w") { |file| file.write(slurm_template) }
 end
-
-# Ensure the script is run from the "neutneut" directory
-current_dir = File.basename(Dir.getwd)
-if current_dir != 'neutneut'
-  puts "Error: This script must be run from the 'neutneut' directory."
-  exit 1
-end
-
-# Define paths for the project's training and predict directories
-training_dir = "#{project_dir}/training"
-predict_dir = "#{project_dir}/predict"
-
-# Create the predict directory if it doesn't already exist
-FileUtils.mkdir_p(predict_dir)
 
 # Recursively search for 'trained_model.keras' files in the tensorflow directory
 model_files = Dir.glob("#{project_dir}/tensorflow/**/*trained_model.keras")
@@ -90,15 +94,13 @@ puts "Using model: #{model_path}"
 # Define Python program path
 python_program = './tools/predict_model.py'
 
-puts "#{training_dir}"
 # Loop over all .h5 files in the training directory
-Dir.glob("#{training_dir}/*.h5").each do |h5_file|
-    
+Dir.glob("#{project_dir}/training/*.h5").each do |h5_file|
   # Extract the file's padded number from the h5 file name
   file_number = File.basename(h5_file, ".h5").split("_").first.split(".").last
-  
+
   # Find the matching .hipo file with the same padded number
-  hipo_file = "#{training_dir}/../cooked/#{File.basename(h5_file, ".h5")}.hipo"
+  hipo_file = "#{project_dir}/cooked/#{File.basename(h5_file, ".h5")}.hipo"
 
   unless File.exist?(hipo_file)
     puts "Error: Matching HIPO file for #{h5_file} not found (expected #{hipo_file})."
@@ -106,73 +108,83 @@ Dir.glob("#{training_dir}/*.h5").each do |h5_file|
   end
 
   # Define the paths for _OC.hipo, _OC1.hipo, and _OC2.hipo
-  cooked_OC_hipo = "#{predict_dir}/#{File.basename(hipo_file, ".hipo")}_OC.hipo"
-  cooked_OC1_hipo = "#{predict_dir}/#{File.basename(hipo_file, ".hipo")}_OC1.hipo"
-  cooked_OC2_hipo = "#{predict_dir}/#{File.basename(hipo_file, ".hipo")}_OC2.hipo"
-  final_filtered_hipo = "#{predict_dir}/#{File.basename(hipo_file, ".hipo")}_ML.hipo"
+  cooked_OC_orig_hipo = "#{project_dir}/cooked/#{File.basename(hipo_file, ".hipo")}_OC.hipo"
+  cooked_OC_hipo = "#{project_dir}/predict/#{File.basename(hipo_file, ".hipo")}_OC.hipo"
+  cooked_OC1_hipo = "#{project_dir}/predict/#{File.basename(hipo_file, ".hipo")}_OC1.hipo"
+  cooked_OC2_hipo = "#{project_dir}/predict/#{File.basename(hipo_file, ".hipo")}_OC2.hipo"
+  final_filtered_hipo = "#{project_dir}/predict/#{File.basename(hipo_file, ".hipo")}_ML.hipo"
 
-  # Step 0: Clean up intermediate files
-  # Avoids errors in recon-util
-  puts "Cleaning up intermediate files..."
-  #File.delete(cooked_OC_hipo) if File.exist?(cooked_OC_hipo)
-  File.delete(cooked_OC1_hipo) if File.exist?(cooked_OC1_hipo)
-  File.delete(cooked_OC2_hipo) if File.exist?(cooked_OC2_hipo)
-  File.delete(final_filtered_hipo) if File.exist?(final_filtered_hipo)
-    
-  # Step 1: Run the Python program with the .h5 and original hipo file
-  puts "Running the Python program on #{h5_file} and #{hipo_file}..."
-  python_command = "python3 #{python_program} --input_h5 #{h5_file} --original_hipofile #{hipo_file} --clustering_variable unique_otid --tB #{options[:tB]} --tD #{options[:tD]} --model_path #{model_path}"
-  system(python_command)
+  # SLURM commands to execute
+  slurm_commands = <<-COMMANDS
+# Step 0: Clean up intermediate files
+echo "Cleaning up intermediate files..."
+rm -f #{cooked_OC_hipo} #{cooked_OC1_hipo} #{cooked_OC2_hipo} #{final_filtered_hipo}
 
-  # Check if the Python program executed successfully
-  if $?.exitstatus != 0
-    puts "Error: Python program execution failed for #{h5_file}."
-    next
-  end
-
-  # Rename the result of the Python program from original hipo file to _OC.hipo
-  if File.exist?(hipo_file.gsub(".hipo", "_OC.hipo"))
-    FileUtils.mv(hipo_file.gsub(".hipo", "_OC.hipo"), cooked_OC_hipo)
-  else
-    puts "Error: Expected output _OC.hipo not found for #{hipo_file}."
-    next
-  end
-
-  # Step 2: Apply hipo-utils filter to _OC.hipo
-  puts "Running hipo-utils filter on #{cooked_OC_hipo}..."
-  hipo_filter_command = "hipo-utils -filter -b 'COAT::config,DC::tdc,ECAL::adc,ECAL::calib,ECAL::calib_OC,ECAL::clusters,ECAL::clusters_OC,ECAL::hits,ECAL::hits+,ECAL::moments,ECAL::moments_OC,ECAL::peaks,ECAL::tdc,FTOF::adc,FTOF::clusters,FTOF::hbclusters,FTOF::hbhits,FTOF::hits,FTOF::matchedclusters,FTOF::rawhits,FTOF::tdc,HTCC::adc,HTCC::rec,HTCC::tdc,HitBasedTrkg::Clusters,HitBasedTrkg::HBClusters,HitBasedTrkg::HBCrosses,HitBasedTrkg::HBHitTrkId,HitBasedTrkg::HBHits,HitBasedTrkg::HBSegments,HitBasedTrkg::HBTracks,HitBasedTrkg::Hits,HitBasedTrkg::Trajectory,MC::Event,MC::GenMatch,MC::Lund,MC::Particle,MC::RecMatch,MC::True,RASTER::adc,RASTER::position,REC::CaloExtras,REC::Cherenkov,REC::CovMat,REC::Event,REC::ScintExtras,REC::Scintillator,REC::Track,REC::Traj,RECHB::CaloExtras,RECHB::Cherenkov,RECHB::Event,RECHB::Particle,RECHB::ScintExtras,RECHB::Scintillator,RECHB::Track,RECHB::Traj,RUN::config,RUN::rf,TimeBasedTrkg::TBClusters,TimeBasedTrkg::TBCovMat,TimeBasedTrkg::TBCrosses,TimeBasedTrkg::TBHits,TimeBasedTrkg::TBSegments,TimeBasedTrkg::TBTracks,TimeBasedTrkg::Trajectory,ai::tracks' #{cooked_OC_hipo} -o #{cooked_OC1_hipo}"
-  system(hipo_filter_command)
-
-  # Check if the hipo-utils command executed successfully
-  if $?.exitstatus != 0
-    puts "Error: hipo-utils filter failed for #{cooked_OC_hipo}."
-    next
-  end
-
-  # Step 3: Run recon-util-OC on _OC1.hipo
-  puts "Running recon-util-OC on #{cooked_OC1_hipo}..."
-  recon_util_command = "./tools/recon-util-OC -i #{cooked_OC1_hipo} -o #{cooked_OC2_hipo} -y ./recon/rga_fall2018_OC.yaml"
-  system(recon_util_command)
-
-  # Check if the recon-util-OC command executed successfully
-  if $?.exitstatus != 0
-    puts "Error: recon-util-OC failed for #{cooked_OC1_hipo}."
-    next
-  end
-
-  # Step 4: Final filter to keep only specified banks
-  puts "Applying final hipo-utils filter to keep only specific banks..."
-  final_filter_command = "hipo-utils -filter -b 'RUN::*,MC::*,REC::Particle,REC::Calorimeter,REC::Track,REC::Traj,ECAL::*' #{cooked_OC2_hipo} -o #{final_filtered_hipo}"
-  system(final_filter_command)
-
-  # Check if the final filtering command executed successfully
-  if $?.exitstatus != 0
-    puts "Error: Final filtering failed for #{cooked_OC2_hipo}."
-    next
-  end
-
-  puts "Processing complete for #{h5_file}. \n\n\nFinal HIPO file saved at #{final_filtered_hipo}"
+# Step 1: Run the Python program
+echo "Running the Python program on #{h5_file}..."
+python3 #{python_program} --input_h5 #{h5_file} --original_hipofile #{hipo_file} --clustering_variable unique_otid --tB #{options[:tB]} --tD #{options[:tD]} --model_path #{model_path}
+mv #{cooked_OC_orig_hipo} #{cooked_OC_hipo}
+if [ $? -ne 0 ]; then
+  echo "Error: Python program execution failed for #{h5_file}."
   exit 1
+fi
+
+# Step 2: Apply hipo-utils filter to _OC.hipo
+echo "Running hipo-utils filter on #{cooked_OC_hipo}..."
+hipo-utils -filter -b 'COAT::config,DC::tdc,ECAL::adc,ECAL::calib,ECAL::calib_OC,ECAL::clusters,ECAL::clusters_OC,ECAL::hits,ECAL::hits+,ECAL::moments,ECAL::moments_OC,ECAL::peaks,ECAL::tdc,FTOF::adc,FTOF::clusters,FTOF::hbclusters,FTOF::hbhits,FTOF::hits,FTOF::matchedclusters,FTOF::rawhits,FTOF::tdc,HTCC::adc,HTCC::rec,HTCC::tdc,HitBasedTrkg::Clusters,HitBasedTrkg::HBClusters,HitBasedTrkg::HBCrosses,HitBasedTrkg::HBHitTrkId,HitBasedTrkg::HBHits,HitBasedTrkg::HBSegments,HitBasedTrkg::HBTracks,HitBasedTrkg::Hits,HitBasedTrkg::Trajectory,MC::Event,MC::GenMatch,MC::Lund,MC::Particle,MC::RecMatch,MC::True,RASTER::adc,RASTER::position,REC::CaloExtras,REC::Cherenkov,REC::CovMat,REC::Event,REC::ScintExtras,REC::Scintillator,REC::Track,REC::Traj,RECHB::CaloExtras,RECHB::Cherenkov,RECHB::Event,RECHB::Particle,RECHB::ScintExtras,RECHB::Scintillator,RECHB::Track,RECHB::Traj,RUN::config,RUN::rf,TimeBasedTrkg::TBClusters,TimeBasedTrkg::TBCovMat,TimeBasedTrkg::TBCrosses,TimeBasedTrkg::TBHits,TimeBasedTrkg::TBSegments,TimeBasedTrkg::TBTracks,TimeBasedTrkg::Trajectory,ai::tracks' #{cooked_OC_hipo} -o #{cooked_OC1_hipo}
+
+if [ $? -ne 0 ]; then
+  echo "Error: hipo-utils filter failed for #{cooked_OC_hipo}."
+  exit 1
+fi
+
+# Step 3: Run recon-util-OC on _OC1.hipo
+echo "Running recon-util-OC on #{cooked_OC1_hipo}..."
+./tools/recon-util-OC -i #{cooked_OC1_hipo} -o #{cooked_OC2_hipo} -y ./recon/rga_fall2018_OC.yaml
+
+if [ $? -ne 0 ]; then
+  echo "Error: recon-util-OC failed for #{cooked_OC1_hipo}."
+  exit 1
+fi
+
+# Step 4: Final filter to keep only specified banks
+echo "Applying final hipo-utils filter to keep only specific banks..."
+hipo-utils -filter -b 'RUN::*,MC::*,REC::Particle,REC::Calorimeter,REC::Track,REC::Traj,ECAL::*' #{cooked_OC2_hipo} -o #{final_filtered_hipo}
+
+if [ $? -ne 0 ]; then
+  echo "Error: Final filtering failed for #{cooked_OC2_hipo}."
+  exit 1
+fi
+
+# Step 5: Clean up intermediate files
+echo "Cleaning up intermediate files..."
+rm -f #{cooked_OC_hipo} #{cooked_OC1_hipo} #{cooked_OC2_hipo}
+
+echo "Processing complete for #{h5_file}. Final HIPO file saved at #{final_filtered_hipo}"
+  COMMANDS
+
+  # Create SLURM file
+  slurm_filename = "predict_#{file_number}.slurm"
+  create_slurm_file(slurm_filename, "predict_#{file_number}", slurm_dir, slurm_commands)
+
+  # Submit the SLURM job
+  puts "Submitting SLURM job for #{h5_file}..."
+  system("sbatch #{slurm_dir}/#{slurm_filename}")
+
 end
 
-puts "\t ==> All steps completed successfully for project #{project_name}!"
+puts "\t ==> All SLURM jobs submitted successfully for project #{project_name}!"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
