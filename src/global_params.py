@@ -25,12 +25,12 @@ model_y_name = ['unique_otid']
 model_misc_names = ['rec_pid', 'pindex', 'mc_pid']
 
 # Scale range for ECAL time
-ECAL_time_min = 0 # 120
-ECAL_time_max = 200 # 260
+ECAL_time_min = 0
+ECAL_time_max = 1000
 
 # Scale range for ECAL energy
-ECAL_energy_min = 0 # 0
-ECAL_energy_max = 1 # 0.2
+ECAL_energy_min = 0
+ECAL_energy_max = 1 
 
 # Scale range for ECAL (x,y) values
 ECAL_xy_min = -500
