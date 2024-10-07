@@ -33,6 +33,7 @@ class DataPreprocessor:
         # Group by file_number and file_event
         grouped = df.groupby(['file_number', 'file_event'])
         df = self._filter_peak_time(df)
+        df = self._filter_peak_energy(df)
         df = self._one_hot_encode(df, 'sector', 6)
         df = self._one_hot_encode(df, 'layer', 9)
         df = self._rescale_columns(df)
@@ -40,23 +41,43 @@ class DataPreprocessor:
         df = self._reorder_columns(df)
 
         return df
-    
+
+ 
     def _filter_peak_time(self, df):
         """
-        Clip the time values in the DataFrame to be within the range ECAL_time_min to ECAL_time_max.
+        Remove rows from the DataFrame where the 'time' values fall outside the ECAL_time_min to ECAL_time_max range.
     
         Parameters:
         -----------
         df : pd.DataFrame
-            The DataFrame where the 'time' column will be clipped.
-        
+            The DataFrame from which rows with out-of-bound 'time' values will be removed.
+    
         Returns:
         --------
         pd.DataFrame
-            The DataFrame with 'time' values clipped to the ECAL_time_min and ECAL_time_max range.
+            The DataFrame with rows removed where 'time' falls outside the ECAL_time_min and ECAL_time_max range.
         """
-        df['time'] = df['time'].clip(lower=ECAL_time_min, upper=ECAL_time_max)
-        return df
+        # Filter the DataFrame to keep only rows where 'time' is within the specified range
+        df_filtered = df[(df['time'] >= ECAL_time_min) & (df['time'] <= ECAL_time_max)]
+        return df_filtered
+
+    def _filter_peak_energy(self, df):
+        """
+        Remove rows from the DataFrame where the 'energy' values fall outside the ECAL_energy_min to ECAL_energy_max range.
+    
+        Parameters:
+        -----------
+        df : pd.DataFrame
+            The DataFrame from which rows with out-of-bound 'energy' values will be removed.
+    
+        Returns:
+        --------
+        pd.DataFrame
+            The DataFrame with rows removed where 'energy' falls outside the ECAL_energy_min and ECAL_energy_max range.
+        """
+        # Filter the DataFrame to keep only rows where 'energy' is within the specified range
+        df_filtered = df[(df['energy'] >= ECAL_energy_min) & (df['energy'] <= ECAL_energy_max)]
+        return df_filtered
 
     def _rescale_columns(self, df):
         """
@@ -257,7 +278,7 @@ class TrainData:
             'centroid_x', 'centroid_y', 'centroid_z', 'is_3way_same_group', 'is_2way_same_group',
             'sector_1', 'sector_2', 'sector_3', 
             'sector_4','sector_5', 'sector_6', 
-            'rec_pid', 'pindex', 'mc_pid','unique_otid'
+            'rec_pid', 'pindex', 'mc_pid','file_event','unique_otid'
         ]
 
         tensors = []
