@@ -154,6 +154,7 @@ class ModelEcalPlotter:
         #ax.set_ylim(-3,3)
         return ax
 
+
     def plot_rec_peaks(self, ax=None):
         if ax==None:
             fig, ax = plt.subplots()
@@ -178,6 +179,7 @@ class ModelEcalPlotter:
             ax.set_xlim(0,1)
             ax.set_ylim(0,1)
         return ax
+
 
     def plot_clustered_ecal_peaks(self,ax=None):
         if ax==None:
