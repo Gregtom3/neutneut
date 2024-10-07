@@ -50,7 +50,7 @@ class Evaluator:
     def _create_dataframe_structure(self):
         columns = [
             'event', 'energy', 'time', 'xo', 'yo', 'zo', 'xe', 'ye', 'ze',
-            'sector', 'layer', 'centroid_x', 'centroid_y', 'centroid_z', 'rec_pid', 'pindex', 'mc_pid',
+            'sector', 'layer', 'centroid_x', 'centroid_y', 'centroid_z', 'rec_pid', 'pindex', 'mc_pid', 'file_event',
             'unique_otid', 'beta', 'xc', 'yc', 'cluster_id', 'is_cluster_leader', 'pred_centroid_x','pred_centroid_y'
         ]
         
@@ -83,7 +83,7 @@ class Evaluator:
         layer = np.argmax(self.X.numpy()[:,:,8:17], axis=2) + 1
 
         df_data = {
-            'event': np.repeat(np.arange(N), M),
+            'event': self.misc.numpy()[:,:,3].flatten() if not tf.reduce_all(tf.equal(self.misc, 0)) else np.zeros(N * M),
             'energy': self.X.numpy()[:,:,0].flatten(),
             'time': self.X.numpy()[:,:,1].flatten(),
             'xo': self.X.numpy()[:,:,2].flatten(),
@@ -115,7 +115,7 @@ class Evaluator:
         # Remove rows where all specified columns are zero
         columns_to_check = ['xo', 'yo', 'zo', 'xe', 'ye', 'ze']
         mask = self.dataframe[columns_to_check].eq(0).all(axis=1)
-        #self.dataframe = self.dataframe[~mask]
+        self.dataframe = self.dataframe[~mask]
 
     
     def cluster(self, tB, tD):
@@ -337,7 +337,6 @@ class Evaluator:
             # Iterate through events and write data to the hipo file
             for event, _ in enumerate(file):
                 event_group = self.clusters_df[self.clusters_df['event'] == event]
-
                 # Cluster data
                 cluster_data = [
                     [int(uid) for uid in event_group["uid"].tolist()],            # 'id' should be short ('S')
@@ -359,9 +358,8 @@ class Evaluator:
                     [int(coordV) for coordV in event_group["coordV"].tolist()],   # 'coordV' should be integer ('I')
                     [int(coordW) for coordW in event_group["coordW"].tolist()]    # 'coordW' should be integer ('I')
                 ]
-
                 # Write data for the event to the clusters bank
-                file.update({cluster_bank: cluster_data})
+                file.update({cluster_bank: np.array(cluster_data)})
 
             # Close the hipo file
             file.close() 
@@ -391,7 +389,7 @@ class Evaluator:
                 ]
 
                 # Write data for the event to the moments bank
-                file.update({moments_bank: moments_data})
+                file.update({moments_bank: np.array(moments_data)})
 
             # Close the hipo file
             file.close()
@@ -427,7 +425,7 @@ class Evaluator:
                 ]
 
                 # Write data for the event to the calib bank
-                file.update({calib_bank: calib_data})
+                file.update({calib_bank: np.array(calib_data)})
 
             # Close the hipo file
             file.close()
