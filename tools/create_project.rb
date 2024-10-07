@@ -206,29 +206,29 @@ else
   end
 end
 
-# NO LONGER NEEDED 
 
-# # Create a Slurm file for combining .h5 files
-# h5_dir = File.join(project_dir, 'training')
-# combine_command = "python3 tools/combine_h5.py #{h5_dir}"
-# combine_slurm_filename = File.join(project_dir, "slurm/combine_h5.slurm")
+# Create a Slurm file for making the unique_otid across the .h5 files
+# For instance, cluster 1 in file 1 should be labeled differently than cluster 1 in file 2
+h5_dir = File.join(project_dir, 'training')
+unique_otid_command = "python3 tools/establish_unique_otid.py --project #{project_dir}"
+unique_otid_slurm_filename = File.join(project_dir, "slurm/unique_otid_h5.slurm")
 
-# combine_slurm_content = <<-SLURM
-# #!/bin/bash
-# #SBATCH --account=clas12
-# #SBATCH --partition=production
-# #SBATCH --mem-per-cpu=2000
-# #SBATCH --job-name=combine_h5
-# #SBATCH --cpus-per-task=1
-# #SBATCH --time=2:00:00
-# #SBATCH --output=#{combine_slurm_filename}.out
-# #SBATCH --error=#{combine_slurm_filename}.err
-# #SBATCH --dependency=afterok:#{slurm_job_ids.join(':')}
+unique_otid_slurm_content = <<-SLURM
+#!/bin/bash
+#SBATCH --account=clas12
+#SBATCH --partition=production
+#SBATCH --mem-per-cpu=2000
+#SBATCH --job-name=unique_otid_h5
+#SBATCH --cpus-per-task=1
+#SBATCH --time=2:00:00
+#SBATCH --output=#{unique_otid_slurm_filename}.out
+#SBATCH --error=#{unique_otid_slurm_filename}.err
+#SBATCH --dependency=afterok:#{slurm_job_ids.join(':')}
 
-# #{combine_command}
-# SLURM
+#{unique_otid_command}
+SLURM
 
-# File.open(combine_slurm_filename, "w") { |file| file.write(combine_slurm_content) }
+File.open(unique_otid_slurm_filename, "w") { |file| file.write(unique_otid_slurm_content) }
 
-# # Submit the combine job after all other jobs
-# system("sbatch #{combine_slurm_filename}")
+# Submit the unique_otid job after all other jobs
+system("sbatch #{unique_otid_slurm_filename}")
