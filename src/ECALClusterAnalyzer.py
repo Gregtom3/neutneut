@@ -104,7 +104,7 @@ class ECALClusterAnalyzer:
                 time = self.calculate_cluster_time(priority_group, centroid)
                 
                 # Default vars
-                status = 0
+                status = int(priority_group["cluster_id"].iloc[0])
                 widthU = 0
                 widthV = 0
                 widthW = 0
@@ -151,11 +151,12 @@ class ECALClusterAnalyzer:
             'group2': [4, 5, 6],
             'group3': [7, 8, 9]
         }
-
+        
+                
         for group_name, layers in layergroups.items():
             layergroup_df = group_df[group_df['layer'].isin(layers)]
             cluster = self.create_cluster_from_layergroup(layergroup_df)
-            
+
             if cluster:
                 cluster['event'] = event
                 # Convert cluster to a DataFrame for concatenation
