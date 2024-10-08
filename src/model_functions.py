@@ -28,25 +28,17 @@ def make_gravnet_model(K=20, N_feat=23, N_grav_layers=2, N_neighbors=10, N_filte
         N_neighbors = [N_neighbors] * N_grav_layers
     else:
         assert(len(N_neighbors)==N_grav_layers)
-    #v = Dense(64, activation='elu',name='Dense0')(m_input)
 
-    #x = BatchNormalization(momentum=0.6,name='batchNorm1')(x)
-    
     feat=[x]
 
-    for i in range(N_grav_layers):#12 or 6
-        #x = GlobalExchange(name='GE_l'+str(i))(x)
-        #v = Dense(64, activation='elu',name='Dense0_l'+str(i))(v)
-        #x = BatchNormalization(momentum=0.6,name='batchNorm1_l'+str(i))(x)
+    for i in range(N_grav_layers):
         x = Dense(64, activation='elu',name='Dense1_l'+str(i))(x)
-        x = GravNet(n_neighbours=N_neighbors[i],#10 
-                       n_dimensions=4, #4
-                       n_filters=N_filters,#128 or 256
+        x = GravNet(n_neighbours=N_neighbors[i],
+                       n_dimensions=4,
+                       n_filters=N_filters,
                        n_propagate=32,
                        subname='GNet_l'+str(i),
-                       name='GNet_l'+str(i))(x)#or inputs??#64 or 128
-        #x = BatchNormalization(momentum=0.6,name='batchNorm2_l'+str(i))(x)
-        # x = Dropout(0.1,name='dropout_l'+str(i))(x) #test
+                       name='GNet_l'+str(i))(x)
         feat.append(Dense(32, activation='elu',name='Dense2_l'+str(i))(x))
 
     x = Concatenate(name='concat1')(feat)

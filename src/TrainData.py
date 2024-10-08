@@ -278,7 +278,7 @@ class TrainData:
             'centroid_x', 'centroid_y', 'centroid_z', 'is_3way_same_group', 'is_2way_same_group',
             'sector_1', 'sector_2', 'sector_3', 
             'sector_4','sector_5', 'sector_6', 
-            'rec_pid', 'pindex', 'mc_pid','file_event','unique_otid'
+            'rec_pid', 'pindex', 'mc_pid','file_event','unique_otid','mc_pid'
         ]
 
         tensors = []
@@ -306,8 +306,8 @@ class TrainData:
             data = self.data
         
         X = data[:, :, :28]
-        y = data[:, :, -1:]
-        misc = data[:, :, 28:-1]
+        y = data[:, :, -2:]
+        misc = data[:, :, 28:-2]
 
         return X, y, misc
 
@@ -369,7 +369,7 @@ def load_zip_train_test_data(directory, batch_size, num_train_batches=None, num_
         if "X" in dataset_name:
             shape = (None, 100, 28)  # Example shape for 'X' data
         elif "y" in dataset_name:
-            shape = (None, 100, 1)   # Example shape for 'y' data
+            shape = (None, 100, 2)   # Example shape for 'y' data
         else:
             shape = (None, 100, 4)   # Example shape for 'misc' data
         
@@ -400,7 +400,7 @@ def load_zip_train_test_data(directory, batch_size, num_train_batches=None, num_
         if "X" in dataset_name:
             shape = (None, 100, 28)
         elif "y" in dataset_name:
-            shape = (None, 100, 1)
+            shape = (None, 100, 2)
         else:
             shape = (None, 100, 4)
         

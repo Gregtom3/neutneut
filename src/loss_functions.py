@@ -124,96 +124,150 @@ def condensation_loss(
     }
 
             
+# Helper function to compute xi
+def compute_xi(beta, object_id):
+    """Compute xi = (1 - ni) * arctanh^2(beta)."""
+    n_i = tf.cast(object_id != -1, tf.float32)  # n_i is 1 if not a background
+    xi = (1 - n_i) * tf.math.square(tf.math.atanh(beta))
+    return xi
+
+# Helper function to compute classification loss
+def compute_classification_loss(object_pid, prob_pid):
+    """Compute the cross-entropy classification loss."""
+    return tf.keras.losses.sparse_categorical_crossentropy(object_pid, prob_pid)
+
+# Helper function to compute Lp_loss
+def compute_Lp_loss(object_id, beta, object_pid, prob_pid):
+    """Compute Lp loss using the formula and weighted by xi."""
+    xi = compute_xi(beta, object_id)
+    classification_loss = compute_classification_loss(object_pid, prob_pid)
+    xi_sum = tf.reduce_sum(xi, axis=[1, 2])
+    Lp_loss = tf.reduce_sum(classification_loss * xi, axis=[1, 2]) / xi_sum
+    return Lp_loss
+
+# Function to calculate existing losses (condensation loss)
 def calculate_losses(y_true, y_pred, q_min, batch_size, K, single_event_loss=True):
-    object_id = tf.cast(y_true[:, :, 0], tf.int32)  # (batch_size, 100, 1)
-    beta      = y_pred[:, :, 0:1]                   # (batch_size, 100, 1)
-    x         = y_pred[:, :, 1:3]                   # (batch_size, 100, 2)
-    if single_event_loss==True:
+    object_id = tf.cast(y_true[:, :, 0], tf.int32)
+    beta      = y_pred[:, :, 0:1]
+    x         = y_pred[:, :, 1:3]
+    
+    if single_event_loss:
         event_id = tf.tile(tf.range(batch_size)[:, tf.newaxis], [1, K])
     else:
         event_id = None
-    object_id = tf.reshape(object_id,[-1])
-    beta      = tf.reshape(beta,[-1,1])
-    x         = tf.reshape(x,[-1,2])
-    loss_dict = condensation_loss(q_min=q_min,
-                                   object_id=object_id,
-                                   event_id=event_id,
-                                   beta=beta,
-                                   x=x,
-                                   noise_threshold=-1)
-
+    
+    object_id = tf.reshape(object_id, [-1])
+    beta      = tf.reshape(beta, [-1, 1])
+    x         = tf.reshape(x, [-1, 2])
+    
+    # Get condensation loss 
+    loss_dict = condensation_loss(q_min=q_min, object_id=object_id, event_id=event_id, beta=beta, x=x, noise_threshold=-1)
+    
     return loss_dict
 
+# Custom loss class that includes the Lp loss
 class CustomLoss(tf.keras.losses.Loss):
     def __init__(self, q_min=0.1, reduction=tf.keras.losses.Reduction.SUM, name="custom_loss", single_event_loss=True):
         super(CustomLoss, self).__init__(reduction=reduction, name=name)
         self.q_min = q_min
         self.single_event_loss = single_event_loss
-
+    
     def call(self, y_true, y_pred):
-            batch_size = tf.shape(y_true)[0] 
-            K          = tf.shape(y_true)[1]
-            loss_dict = calculate_losses(y_true, y_pred, self.q_min, batch_size, K, self.single_event_loss)
-    
-    
-            # Combine the losses
-            total_loss = (loss_dict['attractive'] +
-                          loss_dict['repulsive'] +
-                          loss_dict['coward'] +
-                          loss_dict['noise'])
-    
-            return total_loss
+        batch_size = tf.shape(y_true)[0] 
+        K          = tf.shape(y_true)[1]
+        object_id  = y_true[:,:,0]
+        object_pid = y_true[:,:,1]
+        prob_pid   = y_pred[:, :, 3:6]
+
+        # Existing loss calculation
+        loss_dict = calculate_losses(object_id, y_pred, self.q_min, batch_size, K, self.single_event_loss)
+
+        # Additional Lp_loss calculation
+        beta = y_pred[:, :, 0]
+        Lp_loss = compute_Lp_loss(object_id, beta, object_pid, prob_pid)
+
+        # Combine the losses
+        total_loss = (loss_dict['attractive'] +
+                      loss_dict['repulsive'] +
+                      loss_dict['coward'] +
+                      loss_dict['noise'] +
+                      Lp_loss)  # New loss term
+
+        # Return updated loss dictionary
+        loss_dict['Lp'] = Lp_loss
+        return total_loss
 
     def get_config(self):
         config = super(CustomLoss, self).get_config()
         config.update({"q_min": self.q_min})
         return config
 
-    @classmethod
-    def from_config(cls, config):
-        return cls(**config)
-
-    
-class AttractiveLossMetric(tf.keras.metrics.Mean):
-    def __init__(self, q_min=0.1, name="attractive_loss", **kwargs):
-        super(AttractiveLossMetric, self).__init__(name=name, **kwargs)
+# Base class for similar loss metrics
+class BaseLossMetric(tf.keras.metrics.Mean):
+    def __init__(self, loss_name, q_min=0.1, **kwargs):
+        super(BaseLossMetric, self).__init__(name=loss_name, **kwargs)
         self.q_min = q_min
 
-    def update_state(self, y_true, y_pred, sample_weight=None):
-        batch_size = tf.shape(y_true)[0] 
-        K          = tf.shape(y_true)[1]
-        loss_dict = calculate_losses(y_true, y_pred, self.q_min, batch_size, K)
-        return super(AttractiveLossMetric, self).update_state(loss_dict['attractive'], sample_weight)
-
-class RepulsiveLossMetric(tf.keras.metrics.Mean):
-    def __init__(self, q_min=0.1, name="repulsive_loss", **kwargs):
-        super(RepulsiveLossMetric, self).__init__(name=name, **kwargs)
-        self.q_min = q_min
+    def compute_loss(self, y_true, y_pred):
+        """Placeholder for the specific loss component to be calculated."""
+        raise NotImplementedError
 
     def update_state(self, y_true, y_pred, sample_weight=None):
-        batch_size = tf.shape(y_true)[0] 
-        K          = tf.shape(y_true)[1]
+        batch_size = tf.shape(y_true)[0]
+        K = tf.shape(y_true)[1]
+        loss_value = self.compute_loss(y_true, y_pred)
+        return super(BaseLossMetric, self).update_state(loss_value, sample_weight)
+
+# Implement specific loss metrics
+class AttractiveLossMetric(BaseLossMetric):
+    def __init__(self, q_min=0.1, **kwargs):
+        super(AttractiveLossMetric, self).__init__("attractive_loss", q_min=q_min, **kwargs)
+
+    def compute_loss(self, y_true, y_pred):
+        batch_size = tf.shape(y_true)[0]
+        K = tf.shape(y_true)[1]
         loss_dict = calculate_losses(y_true, y_pred, self.q_min, batch_size, K)
-        return super(RepulsiveLossMetric, self).update_state(loss_dict['repulsive'], sample_weight)
+        return loss_dict['attractive']
 
-class CowardLossMetric(tf.keras.metrics.Mean):
-    def __init__(self, q_min=0.1, name="coward_loss", **kwargs):
-        super(CowardLossMetric, self).__init__(name=name, **kwargs)
-        self.q_min = q_min
+class RepulsiveLossMetric(BaseLossMetric):
+    def __init__(self, q_min=0.1, **kwargs):
+        super(RepulsiveLossMetric, self).__init__("repulsive_loss", q_min=q_min, **kwargs)
 
-    def update_state(self, y_true, y_pred, sample_weight=None):
-        batch_size = tf.shape(y_true)[0] 
-        K          = tf.shape(y_true)[1]
+    def compute_loss(self, y_true, y_pred):
+        batch_size = tf.shape(y_true)[0]
+        K = tf.shape(y_true)[1]
         loss_dict = calculate_losses(y_true, y_pred, self.q_min, batch_size, K)
-        return super(CowardLossMetric, self).update_state(loss_dict['coward'], sample_weight)
+        return loss_dict['repulsive']
 
-class NoiseLossMetric(tf.keras.metrics.Mean):
-    def __init__(self, q_min=0.1, name="noise_loss", **kwargs):
-        super(NoiseLossMetric, self).__init__(name=name, **kwargs)
-        self.q_min = q_min
+class CowardLossMetric(BaseLossMetric):
+    def __init__(self, q_min=0.1, **kwargs):
+        super(CowardLossMetric, self).__init__("coward_loss", q_min=q_min, **kwargs)
 
-    def update_state(self, y_true, y_pred, sample_weight=None):
-        batch_size = tf.shape(y_true)[0] 
-        K          = tf.shape(y_true)[1]
+    def compute_loss(self, y_true, y_pred):
+        batch_size = tf.shape(y_true)[0]
+        K = tf.shape(y_true)[1]
         loss_dict = calculate_losses(y_true, y_pred, self.q_min, batch_size, K)
-        return super(NoiseLossMetric, self).update_state(loss_dict['noise'], sample_weight)
+        return loss_dict['coward']
+
+class NoiseLossMetric(BaseLossMetric):
+    def __init__(self, q_min=0.1, **kwargs):
+        super(NoiseLossMetric, self).__init__("noise_loss", q_min=q_min, **kwargs)
+
+    def compute_loss(self, y_true, y_pred):
+        batch_size = tf.shape(y_true)[0]
+        K = tf.shape(y_true)[1]
+        loss_dict = calculate_losses(y_true, y_pred, self.q_min, batch_size, K)
+        return loss_dict['noise']
+
+class LpLossMetric(BaseLossMetric):
+    def __init__(self, **kwargs):
+        super(LpLossMetric, self).__init__("Lp_loss", **kwargs)
+
+    def compute_loss(self, y_true, y_pred):
+        batch_size = tf.shape(y_true)[0]
+        K = tf.shape(y_true)[1]
+        prob_pid = y_pred[:, :, 3:6]
+        object_id = y_true[:, :, 0]
+        object_pid = y_true[:, :, 1]
+        beta = y_pred[:, :, 2]
+        return compute_Lp_loss(object_id, beta, object_pid, prob_pid)
