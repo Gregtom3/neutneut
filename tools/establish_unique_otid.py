@@ -30,12 +30,12 @@ def process_files(project_directory):
     for h5file in tqdm(h5files, desc="Processing files"):
         # Load data from the current h5 file
         x, y, m = load_unzip_data(h5file)
-
+        
         # Only update y values that are >= 0
-        y_mask = y >= 0
+        y_mask = y[:,:,0] >= 0
 
         # Shift the y values in the current file
-        y[y_mask] += max_y_value
+        y[:,:,0][y_mask] += max_y_value
 
         # Update the max_y_value for the next file
         max_y_value = np.max(y[y_mask]) if np.any(y_mask) else max_y_value
