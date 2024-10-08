@@ -52,6 +52,7 @@ class ModelEcalPlotter:
         self.layer = self.event["layer"].values
         self.is_cluster_leader = self.event["is_cluster_leader"].values
         self.cluster_ids = self.event["cluster_id"].values
+        self.pred_pid    = self.event["pred_pid"].values
         self.event_xo = self.event["xo"].values
         self.event_yo = self.event["yo"].values
         self.event_xe = self.event["xe"].values
@@ -201,8 +202,21 @@ class ModelEcalPlotter:
             ihit = np.where((self.is_cluster_leader == 1) & (self.cluster_ids == cluster_id))[0][0]
             leader_xo, leader_yo = self.event_xo[ihit], self.event_yo[ihit]
             leader_xe, leader_ye = self.event_xe[ihit], self.event_ye[ihit]
+            leader_pid_type = self.pred_pid[ihit]
             color = self.colors[ic % len(self.colors)]
-            ax.scatter([leader_xo, leader_xe], [leader_yo, leader_ye], color=color, s=150, edgecolor="k", hatch="...", marker="s")
+            # Choose marker based on leader_pid_type
+            if leader_pid_type == 0:
+                marker = 'D'  # Diamond
+            elif leader_pid_type == 1:
+                marker = 's'  # Square
+            elif leader_pid_type == 2:
+                marker = 'o'  # Circle
+            else:
+                marker = 'x'  # Fallback marker in case of an unexpected pid_type
+            
+            # Scatter plot with dynamic marker
+            ax.scatter([leader_xo, leader_xe], [leader_yo, leader_ye], 
+                       color=color, s=150, edgecolor="k", hatch="...", marker=marker)
         for ic, cluster_id in enumerate(sorted(np.unique(self.cluster_ids))):
             if cluster_id == -1:
                 continue
