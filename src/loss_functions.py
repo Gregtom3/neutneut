@@ -141,8 +141,8 @@ def compute_Lp_loss(object_id, beta, object_pid, prob_pid):
     """Compute Lp loss using the formula and weighted by xi."""
     xi = compute_xi(beta, object_id)
     classification_loss = compute_classification_loss(object_pid, prob_pid)
-    xi_sum = tf.reduce_sum(xi, axis=[1, 2])
-    Lp_loss = tf.reduce_sum(classification_loss * xi, axis=[1, 2]) / xi_sum
+    xi_sum = tf.reduce_sum(xi)
+    Lp_loss = tf.reduce_sum(classification_loss * xi) / xi_sum
     return Lp_loss
 
 # Function to calculate existing losses (condensation loss)
