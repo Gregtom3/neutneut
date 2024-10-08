@@ -134,16 +134,17 @@ def compute_xi(beta, object_id, object_pid):
     is_pid_2112_or_22 = tf.cast((object_pid == 2112) | (object_pid == 22), tf.float32)
     
     # n_i will be 1 for non-background and non-2112 or 22 particles
-    n_i = tf.cast(~(tf.cast(is_background, tf.bool) | tf.cast(is_pid_2112_or_22, tf.bool)), tf.float32)
-
+    #n_i = tf.cast(~(tf.cast(is_background, tf.bool) | tf.cast(is_pid_2112_or_22, tf.bool)), tf.float32)
+    n_i = tf.cast((tf.cast(is_background, tf.bool)), tf.float32)
+    
     # xi = (1 - n_i) * arctanh^2(beta)
     xi = (1 - n_i) * tf.math.atanh(beta)**2
 
     return xi
 
 # Helper function to compute classification loss
-def compute_classification_loss(object_pid, prob_pid):
-    """Map object_pid to class indices and compute the cross-entropy classification loss."""
+def compute_classification_loss(object_pid, prob_pid, f1=2.74, f2=16.24, f3=1.74):
+    """Map object_pid to class indices, apply class weights, and compute the weighted cross-entropy classification loss."""
     
     # Map object_pid to class indices:
     # - class 0 for pid == 22 (photon)
@@ -156,7 +157,17 @@ def compute_classification_loss(object_pid, prob_pid):
 
     # Compute the sparse categorical cross-entropy loss
     classification_loss = tf.keras.losses.sparse_categorical_crossentropy(class_indices, prob_pid)
-    return classification_loss
+
+    # Define class weights
+    class_weights = tf.where(
+        class_indices == 0, f1,  # Apply weight f1 for class 0 (photon)
+        tf.where(class_indices == 1, f2, f3)  # Apply weight f2 for class 1 (neutron), f3 for class 2 (others)
+    )
+
+    # Apply class weights to the loss
+    weighted_loss = classification_loss * class_weights
+
+    return weighted_loss
     
 # Helper function to compute Lp_loss
 def compute_Lp_loss(object_id, beta, object_pid, prob_pid):
@@ -225,73 +236,72 @@ class CustomLoss(tf.keras.losses.Loss):
         config.update({"q_min": self.q_min})
         return config
 
-# Base class for similar loss metrics
-class BaseLossMetric(tf.keras.metrics.Mean):
-    def __init__(self, loss_name, q_min=0.1, alpha_p=1, **kwargs):
-        super(BaseLossMetric, self).__init__(name=loss_name, **kwargs)
+class AttractiveLossMetric(tf.keras.metrics.Mean):
+    def __init__(self, q_min=0.1, name="attractive_loss", **kwargs):
+        super(AttractiveLossMetric, self).__init__(name=name, **kwargs)
         self.q_min = q_min
-        self.alpha_p = alpha_p
-
-    def compute_loss(self, y_true, y_pred):
-        """Placeholder for the specific loss component to be calculated."""
-        raise NotImplementedError
 
     def update_state(self, y_true, y_pred, sample_weight=None):
         batch_size = tf.shape(y_true)[0]
         K = tf.shape(y_true)[1]
-        loss_value = self.compute_loss(y_true, y_pred)
-        return super(BaseLossMetric, self).update_state(loss_value, sample_weight)
+        loss_dict = calculate_losses(y_true, y_pred, self.q_min, batch_size, K)
+        attractive_loss = loss_dict['attractive']
+        super(AttractiveLossMetric, self).update_state(attractive_loss, sample_weight=sample_weight)
 
-# Implement specific loss metrics
-class AttractiveLossMetric(BaseLossMetric):
-    def __init__(self, q_min=0.1, **kwargs):
-        super(AttractiveLossMetric, self).__init__("attractive_loss", q_min=q_min, **kwargs)
 
-    def compute_loss(self, y_true, y_pred):
+class RepulsiveLossMetric(tf.keras.metrics.Mean):
+    def __init__(self, q_min=0.1, name="repulsive_loss", **kwargs):
+        super(RepulsiveLossMetric, self).__init__(name=name, **kwargs)
+        self.q_min = q_min
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
         batch_size = tf.shape(y_true)[0]
         K = tf.shape(y_true)[1]
         loss_dict = calculate_losses(y_true, y_pred, self.q_min, batch_size, K)
-        return loss_dict['attractive']
+        repulsive_loss = loss_dict['repulsive']
+        super(RepulsiveLossMetric, self).update_state(repulsive_loss, sample_weight=sample_weight)
 
-class RepulsiveLossMetric(BaseLossMetric):
-    def __init__(self, q_min=0.1, **kwargs):
-        super(RepulsiveLossMetric, self).__init__("repulsive_loss", q_min=q_min, **kwargs)
 
-    def compute_loss(self, y_true, y_pred):
+class CowardLossMetric(tf.keras.metrics.Mean):
+    def __init__(self, q_min=0.1, name="coward_loss", **kwargs):
+        super(CowardLossMetric, self).__init__(name=name, **kwargs)
+        self.q_min = q_min
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
         batch_size = tf.shape(y_true)[0]
         K = tf.shape(y_true)[1]
         loss_dict = calculate_losses(y_true, y_pred, self.q_min, batch_size, K)
-        return loss_dict['repulsive']
+        coward_loss = loss_dict['coward']
+        super(CowardLossMetric, self).update_state(coward_loss, sample_weight=sample_weight)
 
-class CowardLossMetric(BaseLossMetric):
-    def __init__(self, q_min=0.1, **kwargs):
-        super(CowardLossMetric, self).__init__("coward_loss", q_min=q_min, **kwargs)
 
-    def compute_loss(self, y_true, y_pred):
+
+class NoiseLossMetric(tf.keras.metrics.Mean):
+    def __init__(self, q_min=0.1, name="noise_loss", **kwargs):
+        super(NoiseLossMetric, self).__init__(name=name, **kwargs)
+        self.q_min = q_min
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
         batch_size = tf.shape(y_true)[0]
         K = tf.shape(y_true)[1]
         loss_dict = calculate_losses(y_true, y_pred, self.q_min, batch_size, K)
-        return loss_dict['coward']
+        noise_loss = loss_dict['noise']
+        super(NoiseLossMetric, self).update_state(noise_loss, sample_weight=sample_weight)
 
-class NoiseLossMetric(BaseLossMetric):
-    def __init__(self, q_min=0.1, **kwargs):
-        super(NoiseLossMetric, self).__init__("noise_loss", q_min=q_min, **kwargs)
 
-    def compute_loss(self, y_true, y_pred):
-        batch_size = tf.shape(y_true)[0]
-        K = tf.shape(y_true)[1]
-        loss_dict = calculate_losses(y_true, y_pred, self.q_min, batch_size, K)
-        return loss_dict['noise']
 
-class LpLossMetric(BaseLossMetric):
-    def __init__(self, **kwargs):
-        super(LpLossMetric, self).__init__("Lp_loss", **kwargs)
+class LpLossMetric(tf.keras.metrics.Mean):
+    def __init__(self, alpha_p=1, name="lp_loss", **kwargs):
+        super(LpLossMetric, self).__init__(name=name, **kwargs)
+        self.alpha_p = alpha_p
 
-    def compute_loss(self, y_true, y_pred):
+    def update_state(self, y_true, y_pred, sample_weight=None):
         batch_size = tf.shape(y_true)[0]
         K = tf.shape(y_true)[1]
         prob_pid = y_pred[:, :, 3:6]
         object_id = y_true[:, :, 0]
         object_pid = y_true[:, :, 1]
         beta = y_pred[:, :, 0]
-        return self.alpha_p * compute_Lp_loss(object_id, beta, object_pid, prob_pid)
+        lp_loss = self.alpha_p * compute_Lp_loss(object_id, beta, object_pid, prob_pid)
+        super(LpLossMetric, self).update_state(lp_loss, sample_weight=sample_weight)
+
