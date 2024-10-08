@@ -371,7 +371,7 @@ def load_zip_train_test_data(directory, batch_size, num_train_batches=None, num_
         elif "y" in dataset_name:
             shape = (None, 100, 1)   # Example shape for 'y' data
         else:
-            shape = (None, 100, 3)   # Example shape for 'misc' data
+            shape = (None, 100, 4)   # Example shape for 'misc' data
         
         # Create a TensorFlow Dataset from the generator
         dataset = tf.data.Dataset.from_generator(
@@ -402,7 +402,7 @@ def load_zip_train_test_data(directory, batch_size, num_train_batches=None, num_
         elif "y" in dataset_name:
             shape = (None, 100, 1)
         else:
-            shape = (None, 100, 3)
+            shape = (None, 100, 4)
         
         dataset = tf.data.Dataset.from_generator(
             generator,

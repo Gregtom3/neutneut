@@ -50,7 +50,7 @@ def main():
     args = parser.parse_args()
 
     # Base directory
-    base_directory = '../'
+    base_directory = './'
 
     # Full project directory
     project_directory = os.path.join(base_directory, args.project, 'training')
