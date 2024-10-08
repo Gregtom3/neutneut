@@ -137,8 +137,8 @@ def compute_xi(beta, object_id, object_pid):
     n_i = tf.cast(~(tf.cast(is_background, tf.bool) | tf.cast(is_pid_2112_or_22, tf.bool)), tf.float32)
 
     # xi = (1 - n_i) * arctanh^2(beta)
-    xi = (1 - n_i) * tf.math.square(tf.math.atanh(beta))
-    
+    xi = (1 - n_i) * tf.math.atanh(beta)**2
+
     return xi
 
 # Helper function to compute classification loss
@@ -156,7 +156,6 @@ def compute_classification_loss(object_pid, prob_pid):
 
     # Compute the sparse categorical cross-entropy loss
     classification_loss = tf.keras.losses.sparse_categorical_crossentropy(class_indices, prob_pid)
-
     return classification_loss
     
 # Helper function to compute Lp_loss
@@ -294,5 +293,5 @@ class LpLossMetric(BaseLossMetric):
         prob_pid = y_pred[:, :, 3:6]
         object_id = y_true[:, :, 0]
         object_pid = y_true[:, :, 1]
-        beta = y_pred[:, :, 2]
+        beta = y_pred[:, :, 0]
         return self.alpha_p * compute_Lp_loss(object_id, beta, object_pid, prob_pid)
