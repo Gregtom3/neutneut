@@ -67,11 +67,13 @@ class LossPlotCallback(tf.keras.callbacks.Callback):
         val_repulsive_loss = self.model.history.history['val_repulsive_loss']
         train_coward_loss = self.model.history.history['coward_loss']
         val_coward_loss = self.model.history.history['val_coward_loss']
+        train_lp_loss = self.model.history.history['Lp_loss']  # New Lp loss
+        val_lp_loss = self.model.history.history['val_Lp_loss']  # Validation Lp loss
 
-        plt.figure(figsize=(7, 10),dpi=100)
+        plt.figure(figsize=(7, 12), dpi=100)
 
         # Plot all the individual losses on the same plot
-        plt.subplot(2, 1, 1)
+        plt.subplot(3, 1, 1)
         plt.plot(epochs, train_attractive_loss, 'b-', label='Train Attractive Loss')
         plt.plot(epochs, val_attractive_loss, 'b--', label='Val Attractive Loss')
         plt.plot(epochs, train_repulsive_loss, 'g-', label='Train Repulsive Loss')
@@ -82,10 +84,18 @@ class LossPlotCallback(tf.keras.callbacks.Callback):
         plt.xlabel('Epochs')
         plt.ylabel('Loss')
         plt.legend()
-        #plt.yscale('log')
+
+        # Plot the Lp loss on a separate subplot
+        plt.subplot(3, 1, 2)
+        plt.plot(epochs, train_lp_loss, 'm-', label='Train Lp Loss')
+        plt.plot(epochs, val_lp_loss, 'm--', label='Val Lp Loss')
+        plt.title('Lp Loss')
+        plt.xlabel('Epochs')
+        plt.ylabel('Lp Loss')
+        plt.legend()
 
         # Plot the total loss on a separate subplot
-        plt.subplot(2, 1, 2)
+        plt.subplot(3, 1, 3)
         plt.plot(epochs, train_loss, 'k-', label='Train Total Loss')
         plt.plot(epochs, val_loss, 'k--', label='Val Total Loss')
         plt.title('Total Loss')
@@ -93,7 +103,6 @@ class LossPlotCallback(tf.keras.callbacks.Callback):
         plt.ylabel('Loss')
         plt.legend()
 
-        #plt.yscale('log')
         plt.tight_layout()
 
         # Save the figure
@@ -112,7 +121,9 @@ class LossPlotCallback(tf.keras.callbacks.Callback):
             'Train Repulsive Loss': train_repulsive_loss,
             'Val Repulsive Loss': val_repulsive_loss,
             'Train Coward Loss': train_coward_loss,
-            'Val Coward Loss': val_coward_loss
+            'Val Coward Loss': val_coward_loss,
+            'Train Lp Loss': train_lp_loss,  # New Lp loss
+            'Val Lp Loss': val_lp_loss  # Validation Lp loss
         }
 
         df_loss = pd.DataFrame(loss_data)
@@ -141,10 +152,12 @@ class PrintBatchMetricsCallback(tf.keras.callbacks.Callback):
             repulsive_loss = logs.get('repulsive_loss')
             coward_loss = logs.get('coward_loss')
             noise_loss = logs.get('noise_loss')
+            lp_loss = logs.get('Lp_loss')  # New Lp loss
 
             # Print metrics with epoch and batch information, including total batches
             print(f"Epoch {self.current_epoch}/{self.num_epochs}, Batch {batch+1}/{self.num_train_batches} - "
                   f"Loss: {loss:.4f}, Attractive: {attractive_loss:.4f}, "
-                  f"Repulsive: {repulsive_loss:.4f}, Coward: {coward_loss:.4f}, Noise: {noise_loss:.4f}", flush=True)
+                  f"Repulsive: {repulsive_loss:.4f}, Coward: {coward_loss:.4f}, "
+                  f"Noise: {noise_loss:.4f}, Lp: {lp_loss:.4f}", flush=True)
 
             
