@@ -143,9 +143,22 @@ def compute_xi(beta, object_id, object_pid):
 
 # Helper function to compute classification loss
 def compute_classification_loss(object_pid, prob_pid):
-    """Compute the cross-entropy classification loss."""
-    return tf.keras.losses.sparse_categorical_crossentropy(object_pid, prob_pid)
+    """Map object_pid to class indices and compute the cross-entropy classification loss."""
+    
+    # Map object_pid to class indices:
+    # - class 0 for pid == 22 (photon)
+    # - class 1 for pid == 2112 (neutron)
+    # - class 2 for all other pids
+    class_indices = tf.where(
+        object_pid == 22, 0,  # If pid == 22, map to class 0
+        tf.where(object_pid == 2112, 1, 2)  # If pid == 2112, map to class 1; else map to class 2
+    )
 
+    # Compute the sparse categorical cross-entropy loss
+    classification_loss = tf.keras.losses.sparse_categorical_crossentropy(class_indices, prob_pid)
+
+    return classification_loss
+    
 # Helper function to compute Lp_loss
 def compute_Lp_loss(object_id, beta, object_pid, prob_pid):
     """Compute Lp loss using the formula and weighted by xi."""
@@ -191,7 +204,7 @@ class CustomLoss(tf.keras.losses.Loss):
         prob_pid   = y_pred[:, :, 3:6]
 
         # Existing loss calculation
-        loss_dict = calculate_losses(object_id, y_pred, self.q_min, batch_size, K, self.single_event_loss)
+        loss_dict = calculate_losses(y_true, y_pred, self.q_min, batch_size, K, self.single_event_loss)
 
         # Additional Lp_loss calculation
         beta = y_pred[:, :, 0]

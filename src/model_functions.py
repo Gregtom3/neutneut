@@ -46,7 +46,8 @@ def make_gravnet_model(K=20, N_feat=23, N_grav_layers=2, N_neighbors=10, N_filte
     x = Dense(32, activation='elu', name='Dense3')(x)
     out_beta = Dense(1, activation='sigmoid', name='out_beta')(x)
     out_latent = Dense(2, name='out_latent')(x)
-    out=concatenate([out_beta, out_latent])
+    out_pid = Dense(3, activation='softmax', name='out_pid')(x)
+    out=concatenate([out_beta, out_latent, out_pid])
 
     model=keras.Model(inputs=inputs, outputs=out)
     
