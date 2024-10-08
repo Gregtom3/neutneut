@@ -51,7 +51,7 @@ class Evaluator:
         columns = [
             'event', 'energy', 'time', 'xo', 'yo', 'zo', 'xe', 'ye', 'ze',
             'sector', 'layer', 'centroid_x', 'centroid_y', 'centroid_z', 'rec_pid', 'pindex', 'mc_pid', 'file_event',
-            'unique_otid', 'beta', 'xc', 'yc', 'cluster_id', 'is_cluster_leader', 'pred_centroid_x','pred_centroid_y'
+            'unique_otid', 'beta', 'xc', 'yc', 'cluster_id', 'is_cluster_leader', 'pred_centroid_x','pred_centroid_y','pred_pid'
         ]
         
         return pd.DataFrame(columns=columns)
@@ -107,7 +107,8 @@ class Evaluator:
             'xc': out[:,:,1].flatten(),
             'yc': out[:,:,2].flatten(),
             'cluster_id': -1,
-            'is_cluster_leader': 0
+            'is_cluster_leader': 0,
+            'pred_pid': np.argmax(out[:,:,3:6],axis=2).flatten()
         }
 
         self.dataframe = pd.DataFrame(df_data)
