@@ -125,10 +125,20 @@ def condensation_loss(
 
             
 # Helper function to compute xi
-def compute_xi(beta, object_id):
+def compute_xi(beta, object_id, object_pid):
     """Compute xi = (1 - ni) * arctanh^2(beta)."""
-    n_i = tf.cast(object_id != -1, tf.float32)  # n_i is 1 if not a background
+    # n_i is 1 if:
+    #  - object_id is not -1 (not background)
+    #  - object_pid is not 2112 (neutron) or 22 (photon)
+    is_background = tf.cast(object_id == -1, tf.float32)
+    is_pid_2112_or_22 = tf.cast((object_pid == 2112) | (object_pid == 22), tf.float32)
+    
+    # n_i will be 1 for non-background and non-2112 or 22 particles
+    n_i = tf.cast(~(tf.cast(is_background, tf.bool) | tf.cast(is_pid_2112_or_22, tf.bool)), tf.float32)
+
+    # xi = (1 - n_i) * arctanh^2(beta)
     xi = (1 - n_i) * tf.math.square(tf.math.atanh(beta))
+    
     return xi
 
 # Helper function to compute classification loss
@@ -139,7 +149,7 @@ def compute_classification_loss(object_pid, prob_pid):
 # Helper function to compute Lp_loss
 def compute_Lp_loss(object_id, beta, object_pid, prob_pid):
     """Compute Lp loss using the formula and weighted by xi."""
-    xi = compute_xi(beta, object_id)
+    xi = compute_xi(beta, object_id, object_pid)
     classification_loss = compute_classification_loss(object_pid, prob_pid)
     xi_sum = tf.reduce_sum(xi)
     Lp_loss = tf.reduce_sum(classification_loss * xi) / xi_sum
@@ -167,9 +177,10 @@ def calculate_losses(y_true, y_pred, q_min, batch_size, K, single_event_loss=Tru
 
 # Custom loss class that includes the Lp loss
 class CustomLoss(tf.keras.losses.Loss):
-    def __init__(self, q_min=0.1, reduction=tf.keras.losses.Reduction.SUM, name="custom_loss", single_event_loss=True):
+    def __init__(self, q_min=0.1, alpha_p=1, reduction=tf.keras.losses.Reduction.SUM, name="custom_loss", single_event_loss=True):
         super(CustomLoss, self).__init__(reduction=reduction, name=name)
         self.q_min = q_min
+        self.alpha_p = alpha_p
         self.single_event_loss = single_event_loss
     
     def call(self, y_true, y_pred):
@@ -191,7 +202,7 @@ class CustomLoss(tf.keras.losses.Loss):
                       loss_dict['repulsive'] +
                       loss_dict['coward'] +
                       loss_dict['noise'] +
-                      Lp_loss)  # New loss term
+                      self.alpha_p * Lp_loss)  # New loss term
 
         # Return updated loss dictionary
         loss_dict['Lp'] = Lp_loss
@@ -204,9 +215,10 @@ class CustomLoss(tf.keras.losses.Loss):
 
 # Base class for similar loss metrics
 class BaseLossMetric(tf.keras.metrics.Mean):
-    def __init__(self, loss_name, q_min=0.1, **kwargs):
+    def __init__(self, loss_name, q_min=0.1, alpha_p=1, **kwargs):
         super(BaseLossMetric, self).__init__(name=loss_name, **kwargs)
         self.q_min = q_min
+        self.alpha_p = alpha_p
 
     def compute_loss(self, y_true, y_pred):
         """Placeholder for the specific loss component to be calculated."""
@@ -270,4 +282,4 @@ class LpLossMetric(BaseLossMetric):
         object_id = y_true[:, :, 0]
         object_pid = y_true[:, :, 1]
         beta = y_pred[:, :, 2]
-        return compute_Lp_loss(object_id, beta, object_pid, prob_pid)
+        return self.alpha_p * compute_Lp_loss(object_id, beta, object_pid, prob_pid)
