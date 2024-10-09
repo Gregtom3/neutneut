@@ -47,6 +47,7 @@ def make_gravnet_model(K=20, N_feat=23, N_grav_layers=2, N_neighbors=10, N_filte
     x = Dense(64, activation='elu', name='Dense4')(x)
     
     # Clip the out_beta values between 0.001 and 0.999
+    out_beta = Dense(1, activation='sigmoid', name='out_beta')(x)
     out_beta = Lambda(lambda y: tf.clip_by_value(y, clip_value_min=0.0001, clip_value_max=0.99999), name='clip_out_beta')(out_beta)
     out_latent = Dense(2, name='out_latent')(x)
     out_pid = Dense(3, activation='softmax', name='out_pid')(x)
