@@ -60,9 +60,10 @@ class Evaluator:
     
     def get_event_dataframe(self, event=None):
         if event is None:
-            event = random.choice(self.dataframe['event'].unique())
+            event = int(random.choice(self.dataframe['event'].unique()))
             print("Randomly generated event number =",event)
-        event = self.dataframe['event'].unique()[event] # Event is global now
+        else:
+            event = int(self.dataframe['event'].unique()[event]) # Event is global now
         return self.dataframe[self.dataframe['event'] == event]
     
     

@@ -17,7 +17,7 @@ class DataPreprocessor:
     def __init__(self):
         self.scaler = MinMaxScaler()
 
-    def preprocess(self, df, remove_background=True, min_particles=1):
+    def preprocess(self, df):
         """
         Preprocess the DataFrame by calling individual preprocessing subroutines.
 
@@ -31,8 +31,7 @@ class DataPreprocessor:
             The preprocessed DataFrame.
         """
         # Filter based on groupby file_event, sector, and layer groups
-        df = self._filter_small_groups(df, group_cols=['file_event', 'sector', 'layer_group'], min_size=3)
-        
+        df = self._filter_small_groups(df, group_cols=['event', 'sector', 'layer_group'], min_size=3)
         df = self._filter_peak_time(df)
         df = self._filter_peak_energy(df)
         df = self._one_hot_encode(df, 'sector', 6)
@@ -237,7 +236,7 @@ class TrainData:
     ensuring unique mc_index across all files and splitting the data into train and test sets.
     """
 
-    def __init__(self, csv_files, return_tensor=False, K=10, remove_background=False, min_particles=1):
+    def __init__(self, csv_files, K=100):
         """
         Initialize the TrainData class with a list of CSV files
 
@@ -245,20 +244,11 @@ class TrainData:
         -----------
         csv_files : list[str]
             List of paths to the intersection CSV files.
-        return_tensor : bool
-            If True, returns the data as tensors instead of DataFrames.
         K : int
             The number of elements to include in each tensor along the second dimension.
-        remove_background : bool
-            If True, remove rows where the mc_index==-1 (peaks not associated with an MC::Particle)
-        min_particles : int
-            Minimum number of particles per event 
         """
         self.csv_files = csv_files
-        self.return_tensor = return_tensor
         self.K = K
-        self.remove_background = remove_background
-        self.min_particles    = min_particles
         self.data = pd.DataFrame()
         self.train_data = None
         self.test_data = None
@@ -311,7 +301,7 @@ class TrainData:
 
     def _preprocess_data(self):
         preprocessor = DataPreprocessor()
-        self.data = preprocessor.preprocess(self.data, self.remove_background, self.min_particles)
+        self.data = preprocessor.preprocess(self.data)
         self.data = self._convert_to_tensor(self.data)
 
     def _convert_to_tensor(self, df):
