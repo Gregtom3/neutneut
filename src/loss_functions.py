@@ -143,7 +143,7 @@ def compute_xi(beta, object_id, object_pid):
     return xi
 
 # Helper function to compute classification loss
-def compute_classification_loss(object_pid, prob_pid, f1=2.74, f2=16.24, f3=1.74):
+def compute_classification_loss(object_pid, prob_pid, f1=3.72, f2=15.87, f3=1.50):
     """Map object_pid to class indices, apply class weights, and compute the weighted cross-entropy classification loss."""
     
     # Map object_pid to class indices:
