@@ -9,8 +9,8 @@ from global_params import *
 from ECALClusterAnalyzer import ECALClusterAnalyzer
 import shutil
 import hipopy as hp  
-from loss_functions import condensation_loss
-
+from loss_functions import calculate_losses
+from loss_functions import compute_Lp_loss
 class Evaluator:
     
     def __init__(self, h5_filename=None, X=None, y=None, misc=None, Nevents=None, original_hipofile=None, save_cluster=False):
@@ -78,6 +78,7 @@ class Evaluator:
             raise ValueError("Error: Must load a model before predicting.")
 
         out = self.model.predict(self.X)  # out is N x M x 3
+        self.out = out
         
         N, M, _ = self.X.shape
         
@@ -113,7 +114,7 @@ class Evaluator:
             'pred_pid': np.argmax(out[:,:,3:6],axis=2).flatten(),
             'pred_photon': out[:,:,3].flatten(),
             'pred_neutron': out[:,:,4].flatten(),
-            'pred_other': out[:,:,5].flatten()
+            'pred_other': out[:,:,5].flatten(),
         }
 
         self.dataframe = pd.DataFrame(df_data)
@@ -166,7 +167,7 @@ class Evaluator:
         if self.save_cluster:
             self.dataframe.to_csv(self.h5_filename.replace("/training/","/predict/"))
     
-    def get_loss_df(self,q_min=0.1):
+    def get_loss_df(self,q_min=0.1,alpha_p=1):
         events = self.dataframe.event.unique()
         # Initialize an empty list to store the individual event DataFrames
         df_list = []
@@ -177,28 +178,28 @@ class Evaluator:
             n_objs = len(ev_df.unique_otid.unique())  # Number of unique objects
             n_hits = len(ev_df)  # Number of hits
 
-            # Convert data to tensors
-            unique_otid = tf.convert_to_tensor(ev_df.unique_otid.values, dtype=tf.float32)
-            latent_coords = tf.convert_to_tensor(ev_df[["xc", "yc"]].values, dtype=tf.float32)
-            beta = tf.convert_to_tensor(ev_df.beta.values, dtype=tf.float32)
-            beta = tf.reshape(beta, [-1, 1])  # Reshaping to [N, 1]
+            # Get the event idx for the raw tensors
+            ev_idx = self.misc.numpy()[:,:,3] == event
+            y_true = self.y.numpy()[ev_idx]
+            y_pred = self.out[ev_idx]
+            loss_dict = calculate_losses(y_true, y_pred, q_min, 1, K, single_event_loss=True)
 
-            # Noise threshold (you can adjust the noise value if needed)
-            noise = -1
-
-            # Calculate the losses using the condensation_loss function
-            loss_dict = condensation_loss(q_min=q_min,
-                                          object_id=np.array(unique_otid),
-                                          beta=beta,
-                                          x=latent_coords,
-                                          noise_threshold=noise)
+            # Calculate the Lp loss
+            pid_predictions = np.stack([ev_df.pred_photon.values,  # pred_photon
+                                        ev_df.pred_neutron.values, # pred_neutron
+                                        ev_df.pred_other.values],  # pred_other
+                                        axis=1)
+            object_id  = ev_df.unique_otid
+            object_pid = ev_df.mc_pid
+            beta       = ev_df.beta
+            lp_loss = compute_Lp_loss(unique_otid, beta, object_pid, pid_predictions)
 
             # Extract individual losses
             att_loss = loss_dict['attractive']
             rep_loss = loss_dict['repulsive']
             cow_loss = loss_dict['coward']
             nse_loss = loss_dict['noise']
-            tot_loss = att_loss + rep_loss + cow_loss + nse_loss
+            tot_loss = att_loss + rep_loss + cow_loss + nse_loss + lp_loss
 
             # Create a small DataFrame for this event
             event_df = pd.DataFrame([{
@@ -209,6 +210,7 @@ class Evaluator:
                 'rep_loss': rep_loss.numpy(),
                 'cow_loss': cow_loss.numpy(),
                 'nse_loss': nse_loss.numpy(),
+                'lp_loss':  lp_loss.numpy(),
                 'tot_loss': tot_loss.numpy()
             }])
 
