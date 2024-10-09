@@ -5,7 +5,7 @@ import yaml
 import tensorflow as tf
 sys.path.append("/work/clas12/users/gmat/clas12/neutneut/src/")
 from TrainData import load_zip_train_test_data
-from model_functions import make_gravnet_model
+from model_functions import make_gravnet_model, clip_out_beta
 from loss_functions import CustomLoss, AttractiveLossMetric, RepulsiveLossMetric, CowardLossMetric, NoiseLossMetric, LpLossMetric
 from ModelEcalPlotter import ModelEcalPlotter
 from Evaluator import Evaluator
