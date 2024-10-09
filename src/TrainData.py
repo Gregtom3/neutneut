@@ -30,19 +30,63 @@ class DataPreprocessor:
         pd.DataFrame
             The preprocessed DataFrame.
         """
-        # Group by file_number and file_event
-        grouped = df.groupby(['file_number', 'file_event'])
+        # Filter based on groupby file_event, sector, and layer groups
+        df = self._filter_small_groups(df, group_cols=['file_event', 'sector', 'layer_group'], min_size=3)
+        
         df = self._filter_peak_time(df)
         df = self._filter_peak_energy(df)
         df = self._one_hot_encode(df, 'sector', 6)
         df = self._one_hot_encode(df, 'layer', 9)
         df = self._rescale_columns(df)
-        df = self._delete_columns(df, ['otid', 'event', 'status', 'id'])
+        df = self._delete_columns(df, ['otid', 'event', 'status', 'id', 'layer_group'])
         df = self._reorder_columns(df)
 
         return df
 
- 
+    def _assign_layer_groups(self, df):
+        """
+        Assign layers to groups: [1,2,3] -> 1, [4,5,6] -> 2, [7,8,9] -> 3.
+
+        Parameters:
+        -----------
+        df : pd.DataFrame
+            The DataFrame to modify.
+        
+        Returns:
+        --------
+        pd.DataFrame
+            The DataFrame with an additional 'layer_group' column.
+        """
+        # Create a new column 'layer_group' based on 'layer' column
+        df['layer_group'] = pd.cut(df['layer'], bins=[0, 3, 6, 9], labels=[1, 2, 3], right=True)
+        return df
+
+    def _filter_small_groups(self, df, group_cols, min_size):
+        """
+        Filter out groups that have fewer than the specified number of entries.
+
+        Parameters:
+        -----------
+        df : pd.DataFrame
+            The DataFrame to filter.
+        group_cols : list of str
+            Columns to group by (e.g., 'file_event', 'sector', 'layer_group').
+        min_size : int
+            Minimum number of entries required to keep the group.
+
+        Returns:
+        --------
+        pd.DataFrame
+            The DataFrame with small groups removed.
+        """
+        # Assign layer groups before filtering
+        df = self._assign_layer_groups(df)
+        
+        group_sizes = df.groupby(group_cols).size()
+        large_groups = group_sizes[group_sizes >= min_size].index
+        df_filtered = df[df.set_index(group_cols).index.isin(large_groups)]
+        return df_filtered
+        
     def _filter_peak_time(self, df):
         """
         Remove rows from the DataFrame where the 'time' values fall outside the ECAL_time_min to ECAL_time_max range.
