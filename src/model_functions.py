@@ -43,7 +43,7 @@ def make_gravnet_model(K=20, N_feat=23, N_grav_layers=2, N_neighbors=10, N_filte
 
     x = Concatenate(name='concat1')(feat)
     
-    x = Dense(64, activation='elu', name='Dense3')(x)
+    x = Dense(128, activation='elu', name='Dense3')(x)
     x = Dense(64, activation='elu', name='Dense4')(x)
     
     out_beta = Dense(1, activation='sigmoid', name='out_beta')(x)
