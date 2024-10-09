@@ -118,7 +118,8 @@ class ModelEcalPlotter:
         for (x,y) in zip(self.centroid_x,self.centroid_y):
             if x==0 and y==0:
                 continue
-            ax.scatter(x,y,s=25,color="gray",marker="o",edgecolor="k",zorder=100)
+            # Commenting out centroid plotting
+            # ax.scatter(x,y,s=25,color="gray",marker="o",edgecolor="k",zorder=100)
         ax.set_xlabel("ECAL::hits (X)")
         ax.set_ylabel("ECAL::hits (Y)")
         self.draw_six_sectors(ax)
@@ -225,7 +226,8 @@ class ModelEcalPlotter:
                 cluster_x = self.reco_cluster_x[ihit]
                 cluster_y = self.reco_cluster_y[ihit]
                 color = self.colors[ic % len(self.colors)]
-                ax.scatter(cluster_x,cluster_y,color=color,s=15,edgecolor="k",marker="o")
+                # Commenting out centroid plotting
+                # ax.scatter(cluster_x,cluster_y,color=color,s=15,edgecolor="k",marker="o")
         ax.legend(frameon=True, ncols=2, bbox_to_anchor=(0.5, -0.15), loc='upper center')
         ax.set_xlabel("ECAL::hits (X)")
         ax.set_ylabel("ECAL::hits (Y)")
