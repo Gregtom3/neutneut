@@ -62,6 +62,7 @@ class Evaluator:
         if event is None:
             event = random.choice(self.dataframe['event'].unique())
             print("Randomly generated event number =",event)
+        event = self.dataframe['event'].unique()[event] # Event is global now
         return self.dataframe[self.dataframe['event'] == event]
     
     
@@ -108,7 +109,10 @@ class Evaluator:
             'yc': out[:,:,2].flatten(),
             'cluster_id': -1,
             'is_cluster_leader': 0,
-            'pred_pid': np.argmax(out[:,:,3:6],axis=2).flatten()
+            'pred_pid': np.argmax(out[:,:,3:6],axis=2).flatten(),
+            'pred_photon': out[:,:,3].flatten(),
+            'pred_neutron': out[:,:,4].flatten(),
+            'pred_other': out[:,:,5].flatten()
         }
 
         self.dataframe = pd.DataFrame(df_data)
