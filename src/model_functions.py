@@ -43,12 +43,9 @@ def make_gravnet_model(K=20, N_feat=23, N_grav_layers=2, N_neighbors=10, N_filte
 
     x = Concatenate(name='concat1')(feat)
     
-    x = Dense(32, activation='elu', name='Dense3')(x)
-    # Enforce beta > 0 and beta <= 1 with sigmoid, epsilon, and clipping
-    # epsilon = 1e-9  # Small constant to ensure beta > 0
-    # out_beta = Dense(1, activation='sigmoid', name='out_beta')(x)
-    # out_beta = Lambda(lambda b: tf.clip_by_value(b, epsilon, 1-epsilon), name='beta_clipped')(out_beta)  # Ensure beta is in (0, 1]
-
+    x = Dense(64, activation='elu', name='Dense3')(x)
+    x = Dense(64, activation='elu', name='Dense4')(x)
+    
     out_beta = Dense(1, activation='sigmoid', name='out_beta')(x)
     out_latent = Dense(2, name='out_latent')(x)
     out_pid = Dense(3, activation='softmax', name='out_pid')(x)
