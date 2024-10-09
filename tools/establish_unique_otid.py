@@ -46,7 +46,7 @@ def process_files(project_directory):
         m[:,:,3] += (max_misc_value)
 
         # Update the max_misc_value for the next file
-        max_misc_value = np.max(m[misc_mask]) if np.any(misc_mask) else max_misc_value
+        max_misc_value = np.max(m)
         max_misc_value += 1
 
         # Save the updated data back to the h5 file
