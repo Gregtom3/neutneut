@@ -183,7 +183,7 @@ def calculate_losses(y_true, y_pred, q_min, batch_size, K, single_event_loss=Tru
     object_id = tf.cast(y_true[:, :, 0], tf.int32)
     beta      = y_pred[:, :, 0:1]
     x         = y_pred[:, :, 1:3]
-    
+
     if single_event_loss:
         event_id = tf.tile(tf.range(batch_size)[:, tf.newaxis], [1, K])
     else:
@@ -227,8 +227,6 @@ class CustomLoss(tf.keras.losses.Loss):
                       loss_dict['noise'] +
                       self.alpha_p * Lp_loss)  # New loss term
 
-        # Return updated loss dictionary
-        loss_dict['Lp'] = Lp_loss
         return total_loss
 
     def get_config(self):
