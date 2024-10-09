@@ -6,7 +6,7 @@ import tensorflow as tf
 sys.path.append("/work/clas12/users/gmat/clas12/neutneut/src/")
 from TrainData import load_zip_train_test_data
 from model_functions import make_gravnet_model
-from loss_functions import CustomLoss, AttractiveLossMetric, RepulsiveLossMetric, CowardLossMetric, NoiseLossMetric
+from loss_functions import CustomLoss, AttractiveLossMetric, RepulsiveLossMetric, CowardLossMetric, NoiseLossMetric, LpLossMetric
 from ModelEcalPlotter import ModelEcalPlotter
 from Evaluator import Evaluator
 from callbacks import PlotCallback, CyclicalLearningRate, LossPlotCallback, PrintBatchMetricsCallback
@@ -45,6 +45,7 @@ def main(config_path):
     step_size = int(config['step_size'])
     N_epochs = int(config['N_epochs'])
     q_min = float(config['q_min'])
+    alpha_p = float(config['alpha_p'])
     tB = float(config['tB'])
     tD = float(config['tD'])
     ev = int(config['ev'])
@@ -111,7 +112,8 @@ def main(config_path):
             AttractiveLossMetric(q_min=q_min),
             RepulsiveLossMetric(q_min=q_min),
             CowardLossMetric(q_min=q_min),
-            NoiseLossMetric(q_min=q_min)
+            NoiseLossMetric(q_min=q_min),
+            LpLossMetric(alpha_p=alpha_p)
         ]
     )
 
