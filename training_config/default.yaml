@@ -9,9 +9,9 @@ step_size: 20
 N_epochs: 100
 patience: 100
 q_min: 0.1
-alpha_p: 1
-tB: 0.1
-tD: 0.25
+alpha_p: 0.05
+tB: 0.5
+tD: 0.5
 ev: 0
 ev_n: 10 
 
