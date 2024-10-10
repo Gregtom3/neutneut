@@ -325,7 +325,7 @@ class TrainData:
             if len(tensor) < self.K:
                 # Create padding with zeros for all columns except the last one
                 padding = np.zeros((self.K - len(tensor), len(feature_columns)))
-                padding[:, -3] = -1  # Set the file_event column to -1 in the padding
+                padding[:, -3] = tensor[0][-3]  # Pad the file event number
                 padding[:, -2] = -1  # Set the unique_otid column to -1 in the padding
                 padding[:, -1] = -1  # Set the mc_pid column to -1 in the padding
                 
