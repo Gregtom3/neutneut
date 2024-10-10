@@ -62,6 +62,7 @@ def condensation_loss(
     unique_event_ids = tf.gather(sorted_event_id, first_occurrence_indices)
     
     mask_evt = tf.cast(event_id[:,None]   == unique_event_ids[None,:], tf.float32)
+    mask_att = mask_att * mask_evt
     mask_rep = mask_rep * mask_evt
     
     alphas = tf.argmax(beta * mask_att, axis=0)
@@ -128,14 +129,13 @@ def condensation_loss(
 def compute_xi(beta, object_id, object_pid):
     """Compute xi = (1 - ni) * arctanh^2(beta)."""
     # n_i is 1 if:
-    #  - object_id is not -1 (not background)
+    #  - object_id is -1 (background)
     #  - object_pid is not 2112 (neutron) or 22 (photon)
     is_background = tf.cast(object_id == -1, tf.float32)
     is_pid_2112_or_22 = tf.cast((object_pid == 2112) | (object_pid == 22), tf.float32)
     
-    # n_i will be 1 for non-background and non-2112 or 22 particles
-    #n_i = tf.cast(~(tf.cast(is_background, tf.bool) | tf.cast(is_pid_2112_or_22, tf.bool)), tf.float32)
-    n_i = tf.cast((tf.cast(is_background, tf.bool)), tf.float32)
+    # n_i will be 1 for background and non-2112 or 22 particles
+    n_i = tf.cast((tf.cast(is_background, tf.bool) | ~tf.cast(is_pid_2112_or_22, tf.bool)), tf.float32)
     
     # xi = (1 - n_i) * arctanh^2(beta)
     xi = (1 - n_i) * tf.math.atanh(beta)**2
@@ -174,8 +174,21 @@ def compute_Lp_loss(object_id, beta, object_pid, prob_pid):
     """Compute Lp loss using the formula and weighted by xi."""
     xi = compute_xi(beta, object_id, object_pid)
     classification_loss = compute_classification_loss(object_pid, prob_pid)
+    
+    # Compute the sum of xi
     xi_sum = tf.reduce_sum(xi)
-    Lp_loss = tf.reduce_sum(classification_loss * xi) / xi_sum
+    
+    # Define what to return if xi_sum is 0
+    def return_zero():
+        return tf.constant(0.0)
+    
+    # Define what to return if xi_sum is non-zero
+    def compute_loss():
+        return tf.reduce_sum(classification_loss * xi) / xi_sum
+    
+    # Use tf.cond to check if xi_sum is 0
+    Lp_loss = tf.cond(tf.equal(xi_sum, 0), return_zero, compute_loss)
+    
     return Lp_loss
 
 # Function to calculate existing losses (condensation loss)
