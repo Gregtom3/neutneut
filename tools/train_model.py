@@ -102,7 +102,7 @@ def main(config_path):
     optimizer = tf.keras.optimizers.Adam(learning_rate=initial_lr)
 
     # Instantiate the custom loss function
-    custom_loss = CustomLoss(q_min=q_min)
+    custom_loss = CustomLoss(q_min=q_min, alpha_p = alpha_p)
 
     # Compile the model
     model.compile(
