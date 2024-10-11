@@ -221,7 +221,8 @@ class ECALDataAnalyzer:
             for _, strip_n2 in layer_group.iterrows():
                 if strip_n1['id'] == strip_n2['id'] or strip_x['id'] == strip_n1['id'] or strip_x['id'] == strip_n2['id']:
                     continue
-
+                if strip_n1['layer'] == strip_n2['layer'] or strip_x['layer'] == strip_n1['layer'] or strip_x['layer'] == strip_n2['layer']:
+                    continue
                 # Calculate closest points between lines
                 closest_n_n1 = closest_point_between_lines(
                     np.array([strip_x['xo'], strip_x['yo']]),
