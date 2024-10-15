@@ -8,8 +8,7 @@ from global_params import *
 def preprocess_into_tensors(csv_filename, output_h5_filename):
 
     # Preprocess into tensors
-    data = TrainData(csv_files=[csv_filename],
-                     K=K)
+    data = TrainData(csv_files=[csv_filename])
 
     X, y, misc = data.get_data()
 
