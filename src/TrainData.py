@@ -236,7 +236,7 @@ class TrainData:
     ensuring unique mc_index across all files and splitting the data into train and test sets.
     """
 
-    def __init__(self, csv_files, K=100):
+    def __init__(self, csv_files):
         """
         Initialize the TrainData class with a list of CSV files
 
@@ -403,11 +403,11 @@ def load_zip_train_test_data(directory, batch_size, num_train_batches=None, num_
         
         # Determine the shape based on the dataset_name (adjust shape based on actual data)
         if "X" in dataset_name:
-            shape = (None, 100, 28)  # Example shape for 'X' data
+            shape = (None, K, 28)  # Example shape for 'X' data
         elif "y" in dataset_name:
-            shape = (None, 100, 2)   # Example shape for 'y' data
+            shape = (None, K, 2)   # Example shape for 'y' data
         else:
-            shape = (None, 100, 4)   # Example shape for 'misc' data
+            shape = (None, K, 4)   # Example shape for 'misc' data
         
         # Create a TensorFlow Dataset from the generator
         dataset = tf.data.Dataset.from_generator(
@@ -434,11 +434,11 @@ def load_zip_train_test_data(directory, batch_size, num_train_batches=None, num_
 
         # Determine the shape based on the dataset_name
         if "X" in dataset_name:
-            shape = (None, 100, 28)
+            shape = (None, K, 28)
         elif "y" in dataset_name:
-            shape = (None, 100, 2)
+            shape = (None, K, 2)
         else:
-            shape = (None, 100, 4)
+            shape = (None, K, 4)
         
         dataset = tf.data.Dataset.from_generator(
             generator,
