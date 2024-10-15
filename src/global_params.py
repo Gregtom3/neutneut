@@ -2,7 +2,7 @@
 N_feat = 28
 
 # Maximum population of strips per event
-K = 100
+K = 150
 
 # Train/Test Split Ratio
 train_test_ratio = 0.8 # 80%
