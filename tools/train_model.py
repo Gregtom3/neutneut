@@ -90,7 +90,7 @@ def main(config_path):
 
     # Define the model
     model = make_gravnet_model(
-        K=100,
+        K=150,
         N_feat=28,
         N_grav_layers=config['N_grav_layers'],
         N_neighbors=config['N_neighbors'],
@@ -156,7 +156,7 @@ def main(config_path):
         tB=tB,
         tD=tD,
         outdir=outdir,
-        version="train"
+        version="train",create_first_epoch_plots=True,batch_interval=250
     )
     
     
@@ -167,7 +167,7 @@ def main(config_path):
         tB=tB,
         tD=tD,
         outdir=outdir,
-        version="test"
+        version="test",create_first_epoch_plots=True,batch_interval=250
     )
 
     loss_plot_callback = LossPlotCallback(
