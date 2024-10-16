@@ -5,7 +5,8 @@ from Evaluator import Evaluator
 import numpy as np
 import pandas as pd
 class PlotCallback(tf.keras.callbacks.Callback):
-    def __init__(self, X, y, misc, tB, tD, outdir=None, version=None):
+    def __init__(self, X, y, misc, tB, tD, outdir=None, version=None, 
+                 create_first_epoch_plots=False, batch_interval=300):
         super().__init__()
         self.X = X
         self.y = y
@@ -13,10 +14,13 @@ class PlotCallback(tf.keras.callbacks.Callback):
         self.tB = tB
         self.tD = tD
         self.outdir = outdir
-        self.version_text = "_"+version if version!=None else "" # Addendum for the pngs
-        
+        self.version_text = "_"+version if version != None else ""  # Addendum for the pngs
+        self.create_first_epoch_plots = create_first_epoch_plots  # Flag for first epoch batch plots
+        self.batch_interval = batch_interval  # Interval for batch plots
+        self.current_batch = 0  # Track the current batch
+        self.current_epoch = 0  # Track the current epoch
     def on_epoch_end(self, epoch, logs=None):
-        
+
         evaluator = Evaluator.from_data(self.X, 
                                         self.y, 
                                         self.misc)
@@ -26,12 +30,40 @@ class PlotCallback(tf.keras.callbacks.Callback):
         loss_df = evaluator.get_loss_df()
         for n in range(self.X.shape[0]):
             plotter = ModelEcalPlotter(evaluator.get_event_dataframe(n), use_clas_calo_scale=True)
-            outfile = f"{self.outdir}/ECAL_{epoch:05}_ev{n}{self.version_text}.png" 
+            outfile = f"{self.outdir}/ECAL_{epoch:05}_ev{n}_{self.version_text}.png" 
             ev_loss_df = loss_df.iloc[n]
-            suptitle = f"Epoch {epoch:05}\nEpoch Loss = {logs.get('loss'):.4f}"+"\n"+f"Evt Loss={ev_loss_df.att_loss:.4f}+{ev_loss_df.rep_loss:.4f}+{ev_loss_df.cow_loss:.4f}+{ev_loss_df.nse_loss:.4f}+{ev_loss_df.lp_loss:.4f}={ev_loss_df.tot_loss:.4f}"
-            plotter.plot_all(tD=evaluator.tD,out=outfile,suptitle=suptitle)
-
+            suptitle = (f"Epoch {epoch:05}\nEpoch Loss = {logs.get('loss'):.4f}\n"
+                        f"Evt Loss={ev_loss_df.att_loss:.4f}+{ev_loss_df.rep_loss:.4f}+"
+                        f"{ev_loss_df.cow_loss:.4f}+{ev_loss_df.nse_loss:.4f}="
+                        f"{ev_loss_df.tot_loss-ev_loss_df.lp_loss:.4f}")
+            plotter.plot_all(tD=evaluator.tD, out=outfile, suptitle=suptitle)
+        
+        self.current_epoch = epoch+1
         print(f"End of epoch {epoch+1}")
+
+    def on_train_batch_end(self, batch, logs=None):
+        # Only plot every batch_interval for the first epoch
+        if self.create_first_epoch_plots and self.current_batch % self.batch_interval == 0 and self.current_epoch == 0:
+            evaluator = Evaluator.from_data(self.X, 
+                                            self.y, 
+                                            self.misc)
+            evaluator.load_model(self.model)
+            evaluator.predict()
+            evaluator.cluster(self.tB, self.tD)
+            loss_df = evaluator.get_loss_df()
+
+            for n in range(self.X.shape[0]):
+                plotter = ModelEcalPlotter(evaluator.get_event_dataframe(n), use_clas_calo_scale=True)
+                outfile = (f"{self.outdir}/ECAL_{self.current_epoch:05}_ev{n}_{self.version_text}_"
+                           f"batch{self.current_batch:06}.png")
+                ev_loss_df = loss_df.iloc[n]
+                suptitle = (f"Batch {self.current_batch:06}\nEpoch Loss = {logs.get('loss'):.4f}\n"
+                            f"Evt Loss={ev_loss_df.att_loss:.4f}+{ev_loss_df.rep_loss:.4f}+"
+                            f"{ev_loss_df.cow_loss:.4f}+{ev_loss_df.nse_loss:.4f}="
+                            f"{ev_loss_df.tot_loss-ev_loss_df.lp_loss:.4f}")
+                plotter.plot_all(tD=evaluator.tD, out=outfile, suptitle=suptitle)
+
+        self.current_batch += 1
         
         
 class CyclicalLearningRate(tf.keras.callbacks.Callback):
@@ -160,4 +192,29 @@ class PrintBatchMetricsCallback(tf.keras.callbacks.Callback):
                   f"Repulsive: {repulsive_loss:.4f}, Coward: {coward_loss:.4f}, "
                   f"Noise: {noise_loss:.4f}, Lp: {lp_loss:.4f}", flush=True)
 
+
+
+class CustomModelCheckpoint(tf.keras.callbacks.Callback):
+    def __init__(self, filepath, save_freq_batches=10, **kwargs):
+        super(CustomModelCheckpoint, self).__init__()
+        self.filepath = filepath
+        self.save_freq_batches = save_freq_batches
+        self.batch_count = 0
+        self.epoch_count = 0
+        self.kwargs = kwargs
+
+    def on_batch_end(self, batch, logs=None):
+        # Save every `save_freq_batches` batches only during the first epoch
+        if self.epoch_count == 0 and (batch + 1) % self.save_freq_batches == 0:
+            self.batch_count += 1
+            filepath = self.filepath.format(epoch=self.epoch_count + 1, batch=self.batch_count)
+            self.model.save(filepath, **self.kwargs)
+            print(f"\nSaved checkpoint at epoch {self.epoch_count + 1}, batch {self.batch_count}")
+
+    def on_epoch_end(self, epoch, logs=None):
+        # Always save at the end of each epoch
+        self.epoch_count += 1
+        filepath = self.filepath.format(epoch=self.epoch_count, batch="end")
+        self.model.save(filepath, **self.kwargs)
+        print(f"\nSaved checkpoint at the end of epoch {self.epoch_count}")
             
