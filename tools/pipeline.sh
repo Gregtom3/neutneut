@@ -9,7 +9,7 @@ train_csv=$6
 train_h5=$7
 yaml_config=$8
 
-gemc ${gcard} -SAVE_ALL_MOTHERS=1 -SKIPREJECTEDHITS=1 -NGENP=50 -INTEGRATEDRAW="*" -USE_GUI=0 -RUNNO=11 -INPUT_GEN_FILE="LUND, ${lund}" -OUTPUT="hipo, ${gemc_hipo}"
+gemc ${gcard} -SAVE_ALL_MOTHERS=1 -SKIPREJECTEDHITS=1 -NGENP=50 -INTEGRATEDRAW="*" -USE_GUI=0 -RUNNO=11 -INPUT_GEN_FILE="LUND, ${lund}" -OUTPUT="hipo, ${gemc_hipo}" 
 
 echo "******************************************************************************************"
 echo "** Finished running GEMC --> Generated Hipo File at ${gemc_hipo}"

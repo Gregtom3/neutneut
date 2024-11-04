@@ -38,10 +38,10 @@ option_parser = OptionParser.new do |opts|
     options[:project_name] = name
   end
   opts.on("--mode MODE", "Mode (e+n, p+n, e+p+n, e+n?, or dis)") do |v|
-    if ["e+n", "p+n", "e+p+n", "e+n?", "dis"].include?(v)
+    if ["e+n", "p+n", "e+p+n", "e+n?", "dis", "tyson"].include?(v)
       options[:mode] = v
     else
-      puts "Invalid mode. Allowed values are 'e+n', 'p+n', 'e+p+n', 'e+n?', or 'dis'."
+      puts "Invalid mode. Allowed values are 'e+n', 'p+n', 'e+p+n', 'e+n?', 'tyson' or dis'."
       exit
     end
   end
@@ -158,6 +158,32 @@ if options[:mode] == "dis"
     create_slurm_file(slurm_command, file_slurm, options[:project_name])
     job_id = `sbatch #{file_slurm}`.strip.split.last
     slurm_job_ids << job_id
+  end
+# If the mode is "tyson", copy LUND files from the specified path and process them
+elsif options[:mode] == "tyson"
+  tyson_source_path = "/w/work/clas12/tyson/data_repo/elSpectro/eD_n2eFPS_10p2/*.txt"
+  lund_dir = File.join(project_dir, 'lund')
+  FileUtils.mkdir_p(lund_dir)
+
+  # Copy LUND files to the project's lund directory
+  puts "Copying LUND files from #{tyson_source_path} to #{lund_dir}..."
+  FileUtils.cp(Dir.glob(tyson_source_path), lund_dir)
+  puts "Copy complete."
+
+  # Create Slurm files for the copied .txt files
+  Dir.glob("#{lund_dir}/*.txt").each do |file_lund|
+    file_gemc = file_lund.gsub('/lund/', '/gemc/').gsub('.txt', '.hipo')
+    file_cooked = file_lund.gsub('/lund/', '/cooked/').gsub('.txt', '.hipo')
+    file_dst = file_lund.gsub('/lund/', '/dst/').gsub('.txt', '.hipo')
+    file_train = file_lund.gsub('/lund/', '/training/').gsub('.txt', '.csv')
+    file_h5 = file_lund.gsub('/lund/', '/training/').gsub('.txt', '.h5')
+    file_slurm = file_lund.gsub('/lund/', '/slurm/').gsub('.txt', '.slurm')
+
+    slurm_command = "bash ./tools/pipeline.sh #{options[:gcard]} #{file_lund} #{file_gemc} #{file_cooked} #{file_dst} #{file_train} #{file_h5} #{options[:recon]}"
+    create_slurm_file(slurm_command, file_slurm, options[:project_name])
+    job_id = `sbatch #{file_slurm}`.strip.split.last
+    slurm_job_ids << job_id
+    puts "Submitted job for #{file_lund}, Job ID: #{job_id}"
   end
 else
   # Read the YAML configuration file
