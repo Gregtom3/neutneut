@@ -5,8 +5,8 @@ import yaml
 import tensorflow as tf
 sys.path.append("/work/clas12/users/gmat/clas12/neutneut/src/")
 from TrainData import load_zip_train_test_data
-from model_functions import make_gravnet_model
-from loss_functions import CustomLoss, AttractiveLossMetric, RepulsiveLossMetric, CowardLossMetric, NoiseLossMetric
+from model_functions import make_gravnet_model, clip_out_beta
+from loss_functions import CustomLoss, AttractiveLossMetric, RepulsiveLossMetric, CowardLossMetric, NoiseLossMetric, LpLossMetric
 from ModelEcalPlotter import ModelEcalPlotter
 from Evaluator import Evaluator
 from callbacks import PlotCallback, CyclicalLearningRate, LossPlotCallback, PrintBatchMetricsCallback
@@ -14,7 +14,26 @@ from helper_functions import create_output_directory, create_gif_from_pngs, chec
 import math
 import shutil
 from tensorflow.keras.callbacks import ModelCheckpoint
+import argparse
 
+# Argument parser
+parser = argparse.ArgumentParser(description='Train model with config and checkpoint')
+parser.add_argument('config_path', type=str, help='Path to the config file')
+parser.add_argument('--checkpoint', type=str, help='Path to the checkpoint to resume from', default=None)
+
+args = parser.parse_args()
+
+config_path = args.config_path
+checkpoint_path = args.checkpoint
+
+def load_latest_checkpoint(model, checkpoint_dir):
+    """Load the latest model checkpoint if it exists."""
+    latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
+    if latest_checkpoint:
+        print(f"Resuming from checkpoint: {latest_checkpoint}")
+        model.load_weights(latest_checkpoint)
+    else:
+        print("No checkpoint found. Starting training from scratch.")
 
 def load_config(yaml_file):
     with open(yaml_file, 'r') as file:
@@ -45,6 +64,7 @@ def main(config_path):
     step_size = int(config['step_size'])
     N_epochs = int(config['N_epochs'])
     q_min = float(config['q_min'])
+    alpha_p = float(config['alpha_p'])
     tB = float(config['tB'])
     tD = float(config['tD'])
     ev = int(config['ev'])
@@ -89,7 +109,7 @@ def main(config_path):
 
     # Define the model
     model = make_gravnet_model(
-        K=100,
+        K=150,
         N_feat=28,
         N_grav_layers=config['N_grav_layers'],
         N_neighbors=config['N_neighbors'],
@@ -97,11 +117,18 @@ def main(config_path):
         use_sector=False
     )
 
+    # Load the specified checkpoint if provided
+    if checkpoint_path:
+        model.load_weights(checkpoint_path)
+        print(f"Loaded weights from checkpoint: {checkpoint_path}")
+    else:
+        load_latest_checkpoint(model, f'{outdir}/checkpoints')
+    
     # Define the optimizer
     optimizer = tf.keras.optimizers.Adam(learning_rate=initial_lr)
 
     # Instantiate the custom loss function
-    custom_loss = CustomLoss(q_min=q_min)
+    custom_loss = CustomLoss(q_min=q_min, alpha_p = alpha_p)
 
     # Compile the model
     model.compile(
@@ -111,7 +138,8 @@ def main(config_path):
             AttractiveLossMetric(q_min=q_min),
             RepulsiveLossMetric(q_min=q_min),
             CowardLossMetric(q_min=q_min),
-            NoiseLossMetric(q_min=q_min)
+            NoiseLossMetric(q_min=q_min),
+            LpLossMetric(alpha_p=alpha_p)
         ]
     )
 
@@ -154,7 +182,7 @@ def main(config_path):
         tB=tB,
         tD=tD,
         outdir=outdir,
-        version="train"
+        version="train",create_first_epoch_plots=True,batch_interval=250
     )
     
     
@@ -165,7 +193,7 @@ def main(config_path):
         tB=tB,
         tD=tD,
         outdir=outdir,
-        version="test"
+        version="test",create_first_epoch_plots=True,batch_interval=250
     )
 
     loss_plot_callback = LossPlotCallback(
@@ -173,12 +201,12 @@ def main(config_path):
     )
 
     checkpoint_callback = ModelCheckpoint(
-        filepath=outdir+'/checkpoints/epoch_{epoch:04d}.keras',  # Save model to this file path, epoch will be part of the filename
-        monitor='loss',                                       # You can monitor 'val_loss' or another metric if needed
-        save_best_only=False,                                 # Set to True to save only the best model
-        save_weights_only=False,                              # Set to True if you only want to save model weights
-        save_freq='epoch',                                    # Save after every epoch
-        verbose=0                                             # Print a message when the model is saved
+        filepath=outdir+'/checkpoints/epoch_{epoch:04d}.keras',
+        monitor='loss',                                      
+        save_best_only=False,                                
+        save_weights_only=False,                            
+        save_freq='epoch',                                 
+        verbose=0                                     
     )
 
     # Output the number of parameters in the model

@@ -3,6 +3,7 @@ import argparse
 sys.path.append("/work/clas12/users/gmat/clas12/neutneut/src/")
 from Evaluator import Evaluator
 from ECALClusterAnalyzer import ECALClusterAnalyzer
+from model_functions import clip_out_beta
 from loss_functions import CustomLoss, AttractiveLossMetric, RepulsiveLossMetric, CowardLossMetric, NoiseLossMetric
 import tensorflow as tf
 
@@ -25,7 +26,8 @@ def main():
         'AttractiveLossMetric': AttractiveLossMetric,
         'RepulsiveLossMetric': RepulsiveLossMetric,
         'CowardLossMetric': CowardLossMetric,
-        'NoiseLossMetric': NoiseLossMetric
+        'NoiseLossMetric': NoiseLossMetric,
+        'clip_out_beta': clip_out_beta
     })
     
     # Setup Evaluator

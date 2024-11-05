@@ -7,6 +7,14 @@ def recent_directories(path)
   Dir.glob("#{path}/*").select { |f| File.directory?(f) }.sort_by { |f| File.mtime(f) }.reverse.first(5)
 end
 
+# Function to find the latest checkpoint in a given directory
+def find_latest_checkpoint(checkpoint_dir)
+  checkpoints = Dir.glob("#{checkpoint_dir}/*.keras*").sort_by { |f| File.mtime(f) }
+  return checkpoints.last if checkpoints.any?
+
+  nil
+end
+
 # Helper function to convert input to the correct type based on the original value
 def convert_to_type(input, original_value)
   return input if input.strip.upcase == "N"
@@ -161,8 +169,14 @@ def generate_grid_search_configs(config_data, grid_search_params, episode_dir)
   end
 end
 
-# Function to create and submit a SLURM script
 def create_and_submit_slurm_script(config_subdir, config_idx)
+  # Find the latest checkpoint in the current config directory
+  checkpoint_dir = File.join(config_subdir, 'checkpoints')
+  latest_checkpoint = find_latest_checkpoint(checkpoint_dir)
+
+  # Add checkpoint path to the SLURM script if it exists
+  checkpoint_arg = latest_checkpoint ? "--checkpoint #{latest_checkpoint}" : ""
+
   slurm_script = <<~SLURM
     #!/bin/bash
     #SBATCH --account=clas12
@@ -183,7 +197,7 @@ def create_and_submit_slurm_script(config_subdir, config_idx)
     whereis python
     python --version
     pip install hipopy
-    python ./tools/train_model.py #{config_subdir}/config.yaml
+    python ./tools/train_model.py #{config_subdir}/config.yaml #{checkpoint_arg}
   SLURM
 
   slurm_path = File.join(config_subdir, "slurm.slurm")

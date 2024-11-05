@@ -3,15 +3,12 @@ import os
 import h5py
 sys.path.append(os.path.join(os.path.dirname(__file__), '../src/'))
 from TrainData import TrainData
+from global_params import *
 
 def preprocess_into_tensors(csv_filename, output_h5_filename):
 
     # Preprocess into tensors
-    data = TrainData(csv_files=[csv_filename],
-                     return_tensor=True,
-                     K=100,
-                     remove_background=True,
-                     min_particles=1)
+    data = TrainData(csv_files=[csv_filename])
 
     X, y, misc = data.get_data()
 

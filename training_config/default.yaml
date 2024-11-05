@@ -9,12 +9,13 @@ step_size: 20
 N_epochs: 100
 patience: 100
 q_min: 0.1
-tB: 0.1
-tD: 0.25
+alpha_p: 0.00
+tB: 0.5
+tD: 0.28
 ev: 0
 ev_n: 10 
 
 # GravNet model parameters
-N_grav_layers: 6
-N_neighbors: 6
-N_filters: 64
+N_grav_layers: 10
+N_neighbors: 10
+N_filters: 256

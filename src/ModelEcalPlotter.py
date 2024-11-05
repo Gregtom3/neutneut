@@ -52,6 +52,7 @@ class ModelEcalPlotter:
         self.layer = self.event["layer"].values
         self.is_cluster_leader = self.event["is_cluster_leader"].values
         self.cluster_ids = self.event["cluster_id"].values
+        self.pred_pid    = self.event["pred_pid"].values
         self.event_xo = self.event["xo"].values
         self.event_yo = self.event["yo"].values
         self.event_xe = self.event["xe"].values
@@ -114,10 +115,16 @@ class ModelEcalPlotter:
         ax.legend(frameon=True, ncols=2, bbox_to_anchor=(0.5, 1), loc='lower center')
         for i in range(self.event_xo.shape[0]):
             ax.plot([self.event_xo[i], self.event_xe[i]], [self.event_yo[i], self.event_ye[i]], color='black', alpha=0.075)
-        for (x,y) in zip(self.centroid_x,self.centroid_y):
+        for (x,y,l) in zip(self.centroid_x,self.centroid_y,self.layer):
             if x==0 and y==0:
                 continue
-            ax.scatter(x,y,s=25,color="gray",marker="o",edgecolor="k",zorder=100)
+            # Commenting out centroid plotting
+            # if l in [1,2,3]:
+            #     ax.scatter(x,y,s=25,color="gray",marker="o",edgecolor="k",zorder=100)
+            # elif l in [4,5,6]:
+            #     ax.scatter(x,y,s=25,color="gray",marker="^",edgecolor="k",zorder=100)
+            # elif l in [7,8,9]:
+            #     ax.scatter(x,y,s=25,color="gray",marker="v",edgecolor="k",zorder=100)
         ax.set_xlabel("ECAL::hits (X)")
         ax.set_ylabel("ECAL::hits (Y)")
         self.draw_six_sectors(ax)
@@ -129,7 +136,7 @@ class ModelEcalPlotter:
             ax.set_ylim(0,1)
         return ax
 
-    def plot_latent_coordinates(self, ax=None):
+    def plot_latent_coordinates(self, ax=None, latent_space_lims=None):
         if ax==None:
             fig, ax = plt.subplots()
         for iobj, object_id in enumerate(sorted(np.unique(self.object_ids))):
@@ -145,13 +152,11 @@ class ModelEcalPlotter:
         ax.legend(frameon=True, ncols=2, bbox_to_anchor=(0.5, 1), loc='lower center')
         ax.set_xlabel("Latent X Coordinate")
         ax.set_ylabel("Latent Y Coordinate")
-        try:
-            ax.set_xlim(self.xc_range[0], self.xc_range[1])
-            ax.set_ylim(self.yc_range[0], self.yc_range[1])
-        except:
-            pass
-        #ax.set_xlim(-3,3)
-        #ax.set_ylim(-3,3)
+
+        if latent_space_lims!=None:
+            ax.set_xlim(latent_space_lims[0][0],latent_space_lims[0][1])
+            ax.set_ylim(latent_space_lims[1][0],latent_space_lims[1][1])
+
         return ax
 
 
@@ -201,8 +206,21 @@ class ModelEcalPlotter:
             ihit = np.where((self.is_cluster_leader == 1) & (self.cluster_ids == cluster_id))[0][0]
             leader_xo, leader_yo = self.event_xo[ihit], self.event_yo[ihit]
             leader_xe, leader_ye = self.event_xe[ihit], self.event_ye[ihit]
+            leader_pid_type = self.pred_pid[ihit]
             color = self.colors[ic % len(self.colors)]
-            ax.scatter([leader_xo, leader_xe], [leader_yo, leader_ye], color=color, s=150, edgecolor="k", hatch="...", marker="s")
+            # Choose marker based on leader_pid_type
+            if leader_pid_type == 0:
+                marker = 's'  # Diamond
+            elif leader_pid_type == 1:
+                marker = 's'  # Square
+            elif leader_pid_type == 2:
+                marker = 's'  # Circle
+            else:
+                marker = 's'  # Fallback marker in case of an unexpected pid_type
+            
+            # Scatter plot with dynamic marker
+            ax.scatter([leader_xo, leader_xe], [leader_yo, leader_ye], 
+                       color=color, s=150, edgecolor="k", hatch="...", marker=marker)
         for ic, cluster_id in enumerate(sorted(np.unique(self.cluster_ids))):
             if cluster_id == -1:
                 continue
@@ -211,7 +229,8 @@ class ModelEcalPlotter:
                 cluster_x = self.reco_cluster_x[ihit]
                 cluster_y = self.reco_cluster_y[ihit]
                 color = self.colors[ic % len(self.colors)]
-                ax.scatter(cluster_x,cluster_y,color=color,s=15,edgecolor="k",marker="o")
+                # Commenting out centroid plotting
+                # ax.scatter(cluster_x,cluster_y,color=color,s=15,edgecolor="k",marker="o",zorder=100)
         ax.legend(frameon=True, ncols=2, bbox_to_anchor=(0.5, -0.15), loc='upper center')
         ax.set_xlabel("ECAL::hits (X)")
         ax.set_ylabel("ECAL::hits (Y)")
@@ -224,7 +243,7 @@ class ModelEcalPlotter:
             ax.set_ylim(0,1)
         return ax
 
-    def plot_cluster_latent_space(self, tD=None, ax=None):
+    def plot_cluster_latent_space(self, tD=None, ax=None, latent_space_lims=None):
         if ax==None:
             fig, ax = plt.subplots()
         if tD == None:
@@ -247,11 +266,9 @@ class ModelEcalPlotter:
         ax.legend(frameon=True, ncols=2, bbox_to_anchor=(0.5, -0.15), loc='upper center')
         ax.set_xlabel("Latent X Coordinate")
         ax.set_ylabel("Latent Y Coordinate")
-        try:
-            ax.set_xlim(self.xc_range[0], self.xc_range[1])
-            ax.set_ylim(self.yc_range[0], self.yc_range[1])
-        except:
-            pass
+        if latent_space_lims!=None:
+            ax.set_xlim(latent_space_lims[0][0],latent_space_lims[0][1])
+            ax.set_ylim(latent_space_lims[1][0],latent_space_lims[1][1])
         return ax
 
     def plot_beta_histogram(self, ax=None):
@@ -261,6 +278,7 @@ class ModelEcalPlotter:
             idx = self.cluster_ids == cluster_id
             color = self.colors[ic % len(self.colors)]
             if cluster_id == -1:
+                continue # Do not histogram the noise
                 ax.hist(self.beta[idx], range=(0, 1), bins=100, edgecolor="black", zorder=10, histtype="step")
             else:
                 ax.hist(self.beta[idx], range=(0, 1), bins=100, color=color, alpha=0.3)
@@ -312,7 +330,7 @@ class ModelEcalPlotter:
                 cluster_x = self.reco_cluster_x[cluster_idx]
                 cluster_y = self.reco_cluster_y[cluster_idx]
                 color = self.colors[ic % len(self.colors)]
-                ax.scatter(cluster_x, cluster_y, color=color, s=15, edgecolor="k", marker="o")
+                ax.scatter(cluster_x, cluster_y, color=color, s=30, edgecolor="k", marker="x")
 
         ax.legend(frameon=True, ncols=2, bbox_to_anchor=(0.5, -0.15), loc='upper center')
         ax.set_xlabel("ECAL::hits (X)")
@@ -329,14 +347,14 @@ class ModelEcalPlotter:
         return ax
     
 
-    def plot_all(self, tD, out=None, suptitle=None):
+    def plot_all(self, tD, out=None, suptitle=None, latent_space_lims=None):
         fig, axs = plt.subplots(2, 3, figsize=(18, 12), dpi=150, facecolor='white')
         axs = axs.flatten()
         self.plot_mc_peaks(ax=axs[0])
-        self.plot_latent_coordinates(ax=axs[1])
+        self.plot_latent_coordinates(ax=axs[1], latent_space_lims=latent_space_lims)
         self.plot_rec_peaks(ax=axs[2])
         self.plot_clustered_ecal_peaks(ax=axs[3])
-        self.plot_cluster_latent_space(tD, ax=axs[4])
+        self.plot_cluster_latent_space(tD, ax=axs[4], latent_space_lims=latent_space_lims)
         self.plot_beta_histogram(ax=axs[5])
         
         # Adjust the spacing between subplots to make them slightly smaller
@@ -348,4 +366,4 @@ class ModelEcalPlotter:
             plt.savefig(out)
             plt.close()
         else:
-            return axs
+            return fig,axs

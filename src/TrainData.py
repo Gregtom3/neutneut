@@ -17,7 +17,7 @@ class DataPreprocessor:
     def __init__(self):
         self.scaler = MinMaxScaler()
 
-    def preprocess(self, df, remove_background=True, min_particles=1):
+    def preprocess(self, df):
         """
         Preprocess the DataFrame by calling individual preprocessing subroutines.
 
@@ -30,19 +30,62 @@ class DataPreprocessor:
         pd.DataFrame
             The preprocessed DataFrame.
         """
-        # Group by file_number and file_event
-        grouped = df.groupby(['file_number', 'file_event'])
+        # Filter based on groupby file_event, sector, and layer groups
+        df = self._filter_small_groups(df, group_cols=['event', 'sector', 'layer_group'], min_size=3)
         df = self._filter_peak_time(df)
         df = self._filter_peak_energy(df)
         df = self._one_hot_encode(df, 'sector', 6)
         df = self._one_hot_encode(df, 'layer', 9)
         df = self._rescale_columns(df)
-        df = self._delete_columns(df, ['otid', 'event', 'status', 'id'])
+        df = self._delete_columns(df, ['otid', 'event', 'status', 'id', 'layer_group'])
         df = self._reorder_columns(df)
 
         return df
 
- 
+    def _assign_layer_groups(self, df):
+        """
+        Assign layers to groups: [1,2,3] -> 1, [4,5,6] -> 2, [7,8,9] -> 3.
+
+        Parameters:
+        -----------
+        df : pd.DataFrame
+            The DataFrame to modify.
+        
+        Returns:
+        --------
+        pd.DataFrame
+            The DataFrame with an additional 'layer_group' column.
+        """
+        # Create a new column 'layer_group' based on 'layer' column
+        df['layer_group'] = pd.cut(df['layer'], bins=[0, 3, 6, 9], labels=[1, 2, 3], right=True)
+        return df
+
+    def _filter_small_groups(self, df, group_cols, min_size):
+        """
+        Filter out groups that have fewer than the specified number of entries.
+
+        Parameters:
+        -----------
+        df : pd.DataFrame
+            The DataFrame to filter.
+        group_cols : list of str
+            Columns to group by (e.g., 'file_event', 'sector', 'layer_group').
+        min_size : int
+            Minimum number of entries required to keep the group.
+
+        Returns:
+        --------
+        pd.DataFrame
+            The DataFrame with small groups removed.
+        """
+        # Assign layer groups before filtering
+        df = self._assign_layer_groups(df)
+        
+        group_sizes = df.groupby(group_cols).size()
+        large_groups = group_sizes[group_sizes >= min_size].index
+        df_filtered = df[df.set_index(group_cols).index.isin(large_groups)]
+        return df_filtered
+        
     def _filter_peak_time(self, df):
         """
         Remove rows from the DataFrame where the 'time' values fall outside the ECAL_time_min to ECAL_time_max range.
@@ -193,7 +236,7 @@ class TrainData:
     ensuring unique mc_index across all files and splitting the data into train and test sets.
     """
 
-    def __init__(self, csv_files, return_tensor=False, K=10, remove_background=False, min_particles=1):
+    def __init__(self, csv_files):
         """
         Initialize the TrainData class with a list of CSV files
 
@@ -201,20 +244,11 @@ class TrainData:
         -----------
         csv_files : list[str]
             List of paths to the intersection CSV files.
-        return_tensor : bool
-            If True, returns the data as tensors instead of DataFrames.
         K : int
             The number of elements to include in each tensor along the second dimension.
-        remove_background : bool
-            If True, remove rows where the mc_index==-1 (peaks not associated with an MC::Particle)
-        min_particles : int
-            Minimum number of particles per event 
         """
         self.csv_files = csv_files
-        self.return_tensor = return_tensor
         self.K = K
-        self.remove_background = remove_background
-        self.min_particles    = min_particles
         self.data = pd.DataFrame()
         self.train_data = None
         self.test_data = None
@@ -267,7 +301,7 @@ class TrainData:
 
     def _preprocess_data(self):
         preprocessor = DataPreprocessor()
-        self.data = preprocessor.preprocess(self.data, self.remove_background, self.min_particles)
+        self.data = preprocessor.preprocess(self.data)
         self.data = self._convert_to_tensor(self.data)
 
     def _convert_to_tensor(self, df):
@@ -278,7 +312,7 @@ class TrainData:
             'centroid_x', 'centroid_y', 'centroid_z', 'is_3way_same_group', 'is_2way_same_group',
             'sector_1', 'sector_2', 'sector_3', 
             'sector_4','sector_5', 'sector_6', 
-            'rec_pid', 'pindex', 'mc_pid','file_event','unique_otid'
+            'rec_pid', 'pindex', 'mc_pid','file_event','unique_otid','mc_pid'
         ]
 
         tensors = []
@@ -291,8 +325,10 @@ class TrainData:
             if len(tensor) < self.K:
                 # Create padding with zeros for all columns except the last one
                 padding = np.zeros((self.K - len(tensor), len(feature_columns)))
-                padding[:, -1] = -1  # Set the last column to -1 in the padding
-
+                padding[:, -3] = tensor[0][-3]  # Pad the file event number
+                padding[:, -2] = -1  # Set the unique_otid column to -1 in the padding
+                padding[:, -1] = -1  # Set the mc_pid column to -1 in the padding
+                
                 tensor = np.vstack([tensor, padding])
 
             tensors.append(tensor)
@@ -306,8 +342,8 @@ class TrainData:
             data = self.data
         
         X = data[:, :, :28]
-        y = data[:, :, -1:]
-        misc = data[:, :, 28:-1]
+        y = data[:, :, -2:]
+        misc = data[:, :, 28:-2]
 
         return X, y, misc
 
@@ -367,11 +403,11 @@ def load_zip_train_test_data(directory, batch_size, num_train_batches=None, num_
         
         # Determine the shape based on the dataset_name (adjust shape based on actual data)
         if "X" in dataset_name:
-            shape = (None, 100, 28)  # Example shape for 'X' data
+            shape = (None, K, 28)  # Example shape for 'X' data
         elif "y" in dataset_name:
-            shape = (None, 100, 1)   # Example shape for 'y' data
+            shape = (None, K, 2)   # Example shape for 'y' data
         else:
-            shape = (None, 100, 4)   # Example shape for 'misc' data
+            shape = (None, K, 4)   # Example shape for 'misc' data
         
         # Create a TensorFlow Dataset from the generator
         dataset = tf.data.Dataset.from_generator(
@@ -398,11 +434,11 @@ def load_zip_train_test_data(directory, batch_size, num_train_batches=None, num_
 
         # Determine the shape based on the dataset_name
         if "X" in dataset_name:
-            shape = (None, 100, 28)
+            shape = (None, K, 28)
         elif "y" in dataset_name:
-            shape = (None, 100, 1)
+            shape = (None, K, 2)
         else:
-            shape = (None, 100, 4)
+            shape = (None, K, 4)
         
         dataset = tf.data.Dataset.from_generator(
             generator,

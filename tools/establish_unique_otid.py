@@ -23,23 +23,31 @@ def process_files(project_directory):
     # List of all h5 files in the project directory
     h5files = [f"{project_directory}/{file}" for file in sorted(os.listdir(project_directory)) if file.endswith(".h5")]
 
-    # Initialize the shift value for y (starts at 0 for the first file)
+    # Initialize the shift values for y and misc (starts at 0 for the first file)
     max_y_value = 0
+    max_misc_value = 0
 
     # Loop over each h5 file
     for h5file in tqdm(h5files, desc="Processing files"):
         # Load data from the current h5 file
         x, y, m = load_unzip_data(h5file)
-
+        
         # Only update y values that are >= 0
-        y_mask = y >= 0
+        y_mask = y[:,:,0] >= 0
 
         # Shift the y values in the current file
-        y[y_mask] += max_y_value
+        y[:,:,0][y_mask] += max_y_value
 
         # Update the max_y_value for the next file
         max_y_value = np.max(y[y_mask]) if np.any(y_mask) else max_y_value
         max_y_value += 1
+
+        # Now, update misc[:,:,3] values for the current file
+        m[:,:,3] += (max_misc_value)
+
+        # Update the max_misc_value for the next file
+        max_misc_value = np.max(m)
+        max_misc_value += 1
 
         # Save the updated data back to the h5 file
         save_updated_data_to_h5(h5file, x, y, m)
