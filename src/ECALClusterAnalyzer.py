@@ -88,48 +88,35 @@ class ECALClusterAnalyzer:
             #'is_2way_same_group'
         ]
         layergroup_df = layergroup_df.copy()
-        
-        # Ensure centroid_theta and centroid_phi are defined based on centroid_x, centroid_y, and centroid_z
-        layergroup_df.loc[:, 'centroid_theta'] = np.arctan2(np.sqrt(layergroup_df['centroid_x']**2 + layergroup_df['centroid_y']**2), layergroup_df['centroid_z']) * (180 / np.pi)
-        layergroup_df.loc[:, 'centroid_phi'] = np.arctan2(layergroup_df['centroid_y'], layergroup_df['centroid_x']) * (180 / np.pi)
-        
-        # Unwrap centroid_phi to handle circular nature (-180° to 180°)
-        layergroup_df.loc[:, 'centroid_phi_unwrapped'] = np.unwrap(np.radians(layergroup_df['centroid_phi'])) * (180 / np.pi)
-
+    
         # Iterate through each priority column in the given order
         for priority in priority_columns:
             priority_group = layergroup_df[layergroup_df[priority] == 1]
             if not priority_group.empty:
                 # Insist there are 3 unique layers struck (U,V,W)
-                if len(np.unique(priority_group['layer']))!=3:
+                if len(np.unique(priority_group['layer'])) != 3:
                     continue
-                
-                # Check if std of centroid_theta is greater than 4 degrees
-                if (priority_group['centroid_theta'].std() > 4):
-                    continue  # Skip this group if the condition is met
-                
-                # Define a Z-score threshold
-                z_threshold = 1
-
+        
                 # Compute Z-scores for each centroid dimension
-                z_scores_x = np.abs(stats.zscore(priority_group['centroid_x']))
-                z_scores_y = np.abs(stats.zscore(priority_group['centroid_y']))
-                z_scores_z = np.abs(stats.zscore(priority_group['centroid_z']))
-                
-                # Filter out the rows where Z-scores are greater than the threshold
-                filtered_x = priority_group['centroid_x'][z_scores_x < z_threshold]
-                filtered_y = priority_group['centroid_y'][z_scores_y < z_threshold]
-                filtered_z = priority_group['centroid_z'][z_scores_z < z_threshold]
-                
-                # Calculate mean without outliers
-                avg_centroid_x = filtered_x.mean()
-                avg_centroid_y = filtered_y.mean()
-                avg_centroid_z = filtered_z.mean()
-                
-                if np.isnan(avg_centroid_x) or np.isnan(avg_centroid_y) or np.isnan(avg_centroid_z):  
-                    avg_centroid_x = np.mean(priority_group['centroid_x'])
-                    avg_centroid_y = np.mean(priority_group['centroid_y'])
-                    avg_centroid_z = np.mean(priority_group['centroid_z'])
+                z_scores_x = stats.zscore(priority_group['centroid_x'])
+                z_scores_y = stats.zscore(priority_group['centroid_y'])
+                z_scores_z = stats.zscore(priority_group['centroid_z'])
+        
+                # Calculate weights as 1 / (1 + z^2) for each centroid dimension
+                weights_x = 1 / (1 + z_scores_x**2)
+                weights_y = 1 / (1 + z_scores_y**2)
+                weights_z = 1 / (1 + z_scores_z**2)
+        
+                # Calculate the weighted average for each centroid dimension
+                weighted_avg_x = np.sum(priority_group['centroid_x'] * weights_x) / np.sum(weights_x)
+                weighted_avg_y = np.sum(priority_group['centroid_y'] * weights_y) / np.sum(weights_y)
+                weighted_avg_z = np.sum(priority_group['centroid_z'] * weights_z) / np.sum(weights_z)
+        
+                # If the weighted average results in NaN, fall back to simple mean
+                if np.isnan(weighted_avg_x) or np.isnan(weighted_avg_y) or np.isnan(weighted_avg_z):
+                    weighted_avg_x = priority_group['centroid_x'].mean()
+                    weighted_avg_y = priority_group['centroid_y'].mean()
+                    weighted_avg_z = priority_group['centroid_z'].mean()
 
 
                 sector = int(priority_group["sector"].iloc[0])
