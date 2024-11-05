@@ -6,7 +6,7 @@ require 'optparse'
 # Parse command-line arguments
 options = {}
 OptionParser.new do |opts|
-  opts.banner = "Usage: predict_project.rb --name <NAME> --tB <VALUE> --tD <VALUE>"
+  opts.banner = "Usage: predict_project.rb --name <NAME> --tB <VALUE> --tD <VALUE> [--model-path <PATH>]"
 
   opts.on("--name NAME", "Project name to run predictions for") do |name|
     options[:project] = name
@@ -18,6 +18,10 @@ OptionParser.new do |opts|
 
   opts.on("--tD VALUE", Float, "Clustering distance tD (must be a positive value)") do |value|
     options[:tD] = value
+  end
+
+  opts.on("--model-path PATH", "Direct path to the model file") do |path|
+    options[:model_path] = path
   end
 end.parse!
 
@@ -64,31 +68,39 @@ def create_slurm_file(slurm_filename, job_name, slurm_dir, slurm_commands)
   File.open("#{slurm_dir}/#{slurm_filename}", "w") { |file| file.write(slurm_template) }
 end
 
-# Recursively search for 'trained_model.keras' files in the tensorflow directory
-model_files = Dir.glob("#{project_dir}/tensorflow/**/*trained_model.keras")
 
-# If no models found, exit with an error
-if model_files.empty?
-  puts "Error: No trained_model.keras files found in #{project_dir}/tensorflow/"
-  exit 1
+# Determine the model path
+model_path = if options[:model_path]
+  puts "Using specified model: #{options[:model_path]}"
+  options[:model_path]
+else
+  # Recursively search for 'trained_model.keras' files in the tensorflow directory
+  model_files = Dir.glob("#{project_dir}/tensorflow/**/*trained_model.keras")
+
+  # Exit with an error if no models are found
+  if model_files.empty?
+    puts "Error: No trained_model.keras files found in #{project_dir}/tensorflow/"
+    exit 1
+  end
+
+  # Prompt the user to select a model
+  puts "Select a model to use for prediction:"
+  model_files.each_with_index do |model_file, index|
+    puts "#{index + 1}) #{model_file}"
+  end
+
+  print "Enter the number of the model to use: "
+  model_choice = gets.to_i
+
+  # Ensure a valid choice is made
+  if model_choice < 1 || model_choice > model_files.length
+    puts "Error: Invalid model selection."
+    exit 1
+  end
+
+  model_files[model_choice - 1]
 end
 
-# Print the found model files and let the user select the model
-puts "Select a model to use for prediction:"
-model_files.each_with_index do |model_file, index|
-  puts "#{index + 1}) #{model_file}"
-end
-
-print "Enter the number of the model to use: "
-model_choice = gets.to_i
-
-# Ensure a valid choice is made
-if model_choice < 1 || model_choice > model_files.length
-  puts "Error: Invalid model selection."
-  exit 1
-end
-
-model_path = model_files[model_choice - 1]
 puts "Using model: #{model_path}"
 
 # Define Python program path
