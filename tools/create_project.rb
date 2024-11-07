@@ -161,7 +161,7 @@ if options[:mode] == "dis"
   end
 # If the mode is "tyson", copy LUND files from the specified path and process them
 elsif options[:mode] == "tyson"
-  tyson_source_path = "/w/work/clas12/tyson/data_repo/elSpectro/eD_n2eFPS_10p2/*.txt"
+  tyson_source_path = "/w/work/clas12/tyson/data_repo/elSpectro/eD_n2eFPS_10p2_v2/*.txt"
   lund_dir = File.join(project_dir, 'lund')
   FileUtils.mkdir_p(lund_dir)
 
