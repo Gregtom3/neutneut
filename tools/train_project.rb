@@ -168,14 +168,9 @@ def generate_grid_search_configs(config_data, grid_search_params, episode_dir)
     create_and_submit_slurm_script(config_subdir, idx)
   end
 end
-
-def create_and_submit_slurm_script(config_subdir, config_idx)
-  # Find the latest checkpoint in the current config directory
-  checkpoint_dir = File.join(config_subdir, 'checkpoints')
-  latest_checkpoint = find_latest_checkpoint(checkpoint_dir)
-
-  # Add checkpoint path to the SLURM script if it exists
-  checkpoint_arg = latest_checkpoint ? "--checkpoint #{latest_checkpoint}" : ""
+# Function to create and submit SLURM script with optional checkpoint path
+def create_and_submit_slurm_script(config_subdir, config_idx, checkpoint_path = nil)
+  checkpoint_arg = checkpoint_path ? "--checkpoint #{checkpoint_path}" : ""
 
   slurm_script = <<~SLURM
     #!/bin/bash
@@ -209,12 +204,20 @@ end
 
 # Main program logic
 def main
-  if ARGV.length != 2 || ARGV[0] != '--name'
-    puts "Usage: ruby train_project.rb --name <NAME>"
+  # Parse command line arguments
+  continue_from_checkpoint = nil
+  if ARGV.length >= 2 && ARGV[0] == '--name'
+    project_name = ARGV[1]
+    
+    # Check for optional --continue_from_checkpoint argument
+    if ARGV.length == 4 && ARGV[2] == '--continue_from_checkpoint'
+      continue_from_checkpoint = ARGV[3]
+    end
+  else
+    puts "Usage: ruby train_project.rb --name <NAME> [--continue_from_checkpoint <CHECKPOINT_PATH>]"
     exit(1)
   end
 
-  project_name = ARGV[1]
   project_path = File.join('./projects', project_name)
   
   unless Dir.exist?(project_path)
@@ -224,30 +227,51 @@ def main
     exit(1)
   end
 
-  episode_dir = create_episode_directory(File.join(project_path, 'tensorflow'))
-  training_dir = File.join(project_path, 'training')
-  FileUtils.mkdir_p(training_dir)
+  # Determine the episode directory and configuration directory
+  if continue_from_checkpoint
+    # Extract the episode and config directory from the checkpoint path
+    episode_dir = File.dirname(File.dirname(continue_from_checkpoint))
+    config_subdir = File.dirname(File.dirname(continue_from_checkpoint))
+    config_path = File.join(config_subdir, "config.yaml")
+    # Load configuration directly from specified checkpoint's config.yaml
+    if File.exist?(config_path)
+      config_data = YAML.load_file(config_path)
+      puts "Loaded configuration from #{config_path} for continued training."
+    else
+      puts "Configuration file not found: #{config_path}"
+      exit(1)
+    end
+  else
+    # Create a new episode directory if not continuing from checkpoint
+    episode_dir = create_episode_directory(File.join(project_path, 'tensorflow'))
+    training_dir = File.join(project_path, 'training')
+    FileUtils.mkdir_p(training_dir)
 
-  config_data = prompt_for_config('./training_config', training_dir, episode_dir)
-  
-  puts "Initial configuration:"
-  puts YAML.dump(config_data)
-
-  grid_search_enabled = prompt_for_grid_search(config_data, episode_dir)
-
-  unless grid_search_enabled
+    # Prompt user to select and modify configuration if not resuming from checkpoint
+    config_data = prompt_for_config('./training_config', training_dir, episode_dir)
     config_subdir = File.join(episode_dir, 'config_0000')
     FileUtils.mkdir_p(config_subdir)
-    config_data['output_dir'] = config_subdir
     config_path = File.join(config_subdir, "config.yaml")
     File.write(config_path, YAML.dump(config_data))
 
-    # Create and submit the SLURM script for the single configuration
-    create_and_submit_slurm_script(config_subdir, 0)
+    puts "Initial configuration:"
+    puts YAML.dump(config_data)
+  end
+
+  # Determine if grid search is enabled
+  grid_search_enabled = continue_from_checkpoint ? false : prompt_for_grid_search(config_data, episode_dir)
+
+  # Submit SLURM job
+  unless grid_search_enabled
+    # Only submit the single configuration in the checkpoint case
+    create_and_submit_slurm_script(config_subdir, 0, continue_from_checkpoint)
   end
 
   puts "Training setup complete. Configuration saved in #{episode_dir}."
 end
+
+
+
 
 # Execute the main program
 main

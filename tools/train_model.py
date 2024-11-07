@@ -254,8 +254,8 @@ def main(config_path):
     model.save(model_save_paths['savedmodel'], save_format='tf')
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python train_model.py <config.yaml>")
+    if len(sys.argv) < 2:
+        print("Usage: python train_model.py <config.yaml> --checkpoint <checkpoint.path>")
         sys.exit(1)
     
     config_path = sys.argv[1]
