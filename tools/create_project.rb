@@ -219,13 +219,12 @@ else
     file_lund = file
     file_gemc = file_lund.gsub('/lund/', '/gemc/').gsub('.lund','.hipo')
     file_cooked = file_lund.gsub('/lund/', '/cooked/').gsub('.lund','.hipo')
-    file_dst   = file_lund.gsub('/lund/', '/dst/').gsub('.lund','.hipo')
     file_train   = file_lund.gsub('/lund/', '/training/').gsub('.lund','.csv')
     file_h5    = file_lund.gsub('/lund/', '/training/').gsub('.lund','.h5')
     file_slurm = file_lund.gsub('/lund/','/slurm/').gsub('.lund','.slurm')
       
     puts "Generated slurm file: #{file_slurm}"
-    slurm_command = "bash ./tools/pipeline.sh #{options[:gcard]} #{file_lund} #{file_gemc} #{file_cooked} #{file_dst} #{file_train} #{file_h5} #{options[:recon]}"
+    slurm_command = "bash ./tools/pipeline.sh #{options[:gcard]} #{file_lund} #{file_gemc} #{file_cooked} #{file_train} #{file_h5} #{options[:recon]}"
     create_slurm_file(slurm_command, file_slurm, options[:project_name])
     job_id = `sbatch #{file_slurm}`.strip.split.last
     slurm_job_ids << job_id

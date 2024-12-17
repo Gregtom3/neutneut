@@ -9,7 +9,7 @@ Theta:
   max: 35.0
   step: 5.0
 Phi:
-  min: -20.0
-  max: 0.0
+  min: 0.0
+  max: 20.0
   step: 5.0
 SPREAD_P: "0.01*GeV, 0.01*deg, 0.01*deg"

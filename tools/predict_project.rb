@@ -3,6 +3,7 @@ require 'fileutils'
 require 'date'
 require 'optparse'
 
+
 # Parse command-line arguments
 options = {}
 OptionParser.new do |opts|
@@ -27,7 +28,7 @@ end.parse!
 
 # Ensure project name, tB, and tD are provided
 unless options[:project]
-  puts "Error: --project <NAME> is required."
+  puts "Error: --name <NAME> is required."
   exit 1
 end
 
@@ -161,7 +162,7 @@ fi
 
 # Step 4: Final filter to keep only specified banks
 echo "Applying final hipo-utils filter to keep only specific banks..."
-hipo-utils -filter -b 'RUN::*,MC::*,REC::Particle,REC::Calorimeter,REC::Track,REC::Traj,ECAL::*' #{cooked_OC2_hipo} -o #{final_filtered_hipo}
+hipo-utils -filter -b 'RUN::*,MC::*,REC::*,ECAL::*' #{cooked_OC2_hipo} -o #{final_filtered_hipo}
 
 if [ $? -ne 0 ]; then
   echo "Error: Final filtering failed for #{cooked_OC2_hipo}."
@@ -182,7 +183,6 @@ echo "Processing complete for #{h5_file}. Final HIPO file saved at #{final_filte
   # Submit the SLURM job
   puts "Submitting SLURM job for #{h5_file}..."
   system("sbatch #{slurm_dir}/#{slurm_filename}")
-  exit 0
 end
 
 puts "\t ==> All SLURM jobs submitted successfully for project #{project_name}!"

@@ -84,8 +84,7 @@ class ECALClusterAnalyzer:
         Search for rows that have a '1' in the highest priority column and return the cluster properties.
         """
         priority_columns = [
-            'is_3way_same_group',
-            #'is_2way_same_group'
+            'is_3way_same_group'
         ]
         layergroup_df = layergroup_df.copy()
     
@@ -96,62 +95,66 @@ class ECALClusterAnalyzer:
                 # Insist there are 3 unique layers struck (U,V,W)
                 if len(np.unique(priority_group['layer'])) != 3:
                     continue
-        
-                # Compute Z-scores for each centroid dimension
-                z_scores_x = stats.zscore(priority_group['centroid_x'])
-                z_scores_y = stats.zscore(priority_group['centroid_y'])
-                z_scores_z = stats.zscore(priority_group['centroid_z'])
-        
-                # Calculate weights as 1 / (1 + z^2) for each centroid dimension
-                weights_x = 1 / (1 + z_scores_x**2)
-                weights_y = 1 / (1 + z_scores_y**2)
-                weights_z = 1 / (1 + z_scores_z**2)
-        
-                # Calculate the weighted average for each centroid dimension
-                weighted_avg_x = np.sum(priority_group['centroid_x'] * weights_x) / np.sum(weights_x)
-                weighted_avg_y = np.sum(priority_group['centroid_y'] * weights_y) / np.sum(weights_y)
-                weighted_avg_z = np.sum(priority_group['centroid_z'] * weights_z) / np.sum(weights_z)
-        
-                # If the weighted average results in NaN, fall back to simple mean
-                if np.isnan(weighted_avg_x) or np.isnan(weighted_avg_y) or np.isnan(weighted_avg_z):
-                    weighted_avg_x = priority_group['centroid_x'].mean()
-                    weighted_avg_y = priority_group['centroid_y'].mean()
-                    weighted_avg_z = priority_group['centroid_z'].mean()
-
-
+    
+                # Function to handle Z-score NaN values and weight calculation
+                def compute_weights(centroid_values):
+                    z_scores = stats.zscore(centroid_values)
+                    if np.isnan(z_scores).any():
+                        weights = np.ones_like(centroid_values)  # Use equal weights if NaN
+                    else:
+                        weights = 1 / (1 + z_scores**2)
+                    return weights
+    
+                # Calculate weights for each centroid dimension
+                weights_x = compute_weights(priority_group['centroid_x'])
+                weights_y = compute_weights(priority_group['centroid_y'])
+                weights_z = compute_weights(priority_group['centroid_z'])
+    
+                # Calculate weighted average safely with zero-check for weights
+                def weighted_avg(centroid_values, weights):
+                    sum_weights = np.sum(weights)
+                    if sum_weights == 0:  # Prevent division by zero
+                        print("Warning: sum of weights is zero.")
+                        return np.nan
+                    return np.sum(centroid_values * weights) / sum_weights
+    
+                weighted_avg_x = weighted_avg(priority_group['centroid_x'], weights_x)
+                weighted_avg_y = weighted_avg(priority_group['centroid_y'], weights_y)
+                weighted_avg_z = weighted_avg(priority_group['centroid_z'], weights_z)
+    
                 sector = int(priority_group["sector"].iloc[0])
-                layer  = int(((priority_group["layer"].iloc[0]-1) // 3)*3+1)  # Integer division to group layers
+                layer = int(((priority_group["layer"].iloc[0] - 1) // 3) * 3 + 1)  # Integer division to group layers
                 uid = priority_group[self.clustering_variable].iloc[0]  # Clustering variable
-
+    
                 # Calculate additional parameters
-                centroid = np.array([avg_centroid_x, avg_centroid_y, avg_centroid_z])
+                centroid = np.array([weighted_avg_x, weighted_avg_y, weighted_avg_z])
                 energy = self.calculate_cluster_energy(priority_group, centroid)
                 time = self.calculate_cluster_time(priority_group, centroid)
-                
+    
                 # Default vars
                 status = int(priority_group["cluster_id"].iloc[0])
                 widthU = 0
                 widthV = 0
                 widthW = 0
-
+    
                 idU = 0
                 idV = 0
                 idW = 0
-
+    
                 coordU = 0
                 coordV = 0
                 coordW = 0
-
-                return  {
+    
+                return {
                     'uid': uid,
                     'status': status,
                     'layer': layer,
                     'sector': sector,
                     'energy': energy,
                     'time': time,
-                    'x': avg_centroid_x,
-                    'y': avg_centroid_y,
-                    'z': avg_centroid_z,
+                    'x': weighted_avg_x,
+                    'y': weighted_avg_y,
+                    'z': weighted_avg_z,
                     'widthU': widthU,
                     'widthV': widthV,
                     'widthW': widthW,
@@ -162,7 +165,7 @@ class ECALClusterAnalyzer:
                     'coordV': coordV,
                     'coordW': coordW
                 }
-
+    
         # If no matching priority rows are found, return None
         return None
 

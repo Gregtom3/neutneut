@@ -184,9 +184,10 @@ def create_and_submit_slurm_script(config_subdir, config_idx, checkpoint_path = 
     #SBATCH --output=#{config_subdir}/slurm.out
     #SBATCH --error=#{config_subdir}/slurm.err
     
+    srun --pty bash
     source ~/.bashrc
     module purge
-    module load python
+    module load python/3.12.4
     source /work/clas12/users/gmat/venv/tensorflow_env/bin/activate
     which python
     whereis python

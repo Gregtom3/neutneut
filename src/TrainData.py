@@ -16,30 +16,53 @@ class DataPreprocessor:
 
     def __init__(self):
         self.scaler = MinMaxScaler()
-
+        
     def preprocess(self, df):
         """
         Preprocess the DataFrame by calling individual preprocessing subroutines.
-
+    
         Parameters:
         -----------
         df : pd.DataFrame
             The DataFrame to preprocess.
+    
         Returns:
         --------
         pd.DataFrame
             The preprocessed DataFrame.
         """
-        # Filter based on groupby file_event, sector, and layer groups
+        # Keep track of unique events initially
+        original_events = set(df['event'].unique())
+        
+        # Apply preprocessing steps
         df = self._filter_small_groups(df, group_cols=['event', 'sector', 'layer_group'], min_size=3)
         df = self._filter_peak_time(df)
         df = self._filter_peak_energy(df)
         df = self._one_hot_encode(df, 'sector', 6)
         df = self._one_hot_encode(df, 'layer', 9)
         df = self._rescale_columns(df)
+        
+        # Identify removed events before column deletion
+        remaining_events = set(df['event'].unique())
+        removed_events = original_events - remaining_events
+        
+        # Create missing rows with -999 values for missing events
+        missing_rows = pd.DataFrame({
+            col: -999 for col in df.columns
+        }, index=list(removed_events))  # Convert `removed_events` to a list
+        
+        missing_rows['event'] = list(removed_events)  # Set the 'event' column to the missing events
+        missing_rows['file_event'] = list(removed_events)  # Set the 'file_event' column to the missing events
+        missing_rows['file_number'] = [0]*len(removed_events)
+        
+        # Add missing rows back to the DataFrame
+        df = pd.concat([df, missing_rows], ignore_index=True)
+        
+        # Now delete the specified columns
         df = self._delete_columns(df, ['otid', 'event', 'status', 'id', 'layer_group'])
         df = self._reorder_columns(df)
-
+        # Sort by 'file_event' column
+        df = df.sort_values(by='file_event').reset_index(drop=True)
         return df
 
     def _assign_layer_groups(self, df):
@@ -311,28 +334,37 @@ class TrainData:
             'layer_5', 'layer_6', 'layer_7', 'layer_8', 'layer_9', 
             'centroid_x', 'centroid_y', 'centroid_z', 'is_3way_same_group', 'is_2way_same_group',
             'sector_1', 'sector_2', 'sector_3', 
-            'sector_4','sector_5', 'sector_6', 
-            'rec_pid', 'pindex', 'mc_pid','file_event','unique_otid','mc_pid'
+            'sector_4', 'sector_5', 'sector_6', 
+            'rec_pid', 'pindex', 'mc_pid', 'file_event', 'unique_otid', 'mc_pid'
         ]
-
+    
         tensors = []
         grouped = df.groupby(['file_number', 'file_event'])
         for _, group in tqdm(grouped):
             group = group.sort_values(by='energy', ascending=False)
             
-            tensor = group[feature_columns].values[:self.K]
-
-            if len(tensor) < self.K:
-                # Create padding with zeros for all columns except the last one
-                padding = np.zeros((self.K - len(tensor), len(feature_columns)))
-                padding[:, -3] = tensor[0][-3]  # Pad the file event number
-                padding[:, -2] = -1  # Set the unique_otid column to -1 in the padding
-                padding[:, -1] = -1  # Set the mc_pid column to -1 in the padding
-                
-                tensor = np.vstack([tensor, padding])
-
+            # Detect if 'layer_9' contains -999 in the group
+            if (group['layer_9'] == -999).any():
+                # Create a padded tensor directly if 'layer_9' has -999
+                tensor = np.zeros((self.K, len(feature_columns)))
+                tensor[:, -3] = group['file_event'].iloc[0]  # Pad the file event number
+                tensor[:, -2] = -1  # Set the unique_otid column to -1 in the padding
+                tensor[:, -1] = -1  # Set the mc_pid column to -1 in the padding
+            else:
+                # Otherwise, take the top entries and pad as usual
+                tensor = group[feature_columns].values[:self.K]
+    
+                if len(tensor) < self.K:
+                    # Padding with zeros for all columns except the specified ones
+                    padding = np.zeros((self.K - len(tensor), len(feature_columns)))
+                    padding[:, -3] = tensor[0][-3]  # Pad the file event number
+                    padding[:, -2] = -1  # Set the unique_otid column to -1 in the padding
+                    padding[:, -1] = -1  # Set the mc_pid column to -1 in the padding
+                    
+                    tensor = np.vstack([tensor, padding])
+    
             tensors.append(tensor)
-
+    
         return tf.convert_to_tensor(tensors, dtype=tf.float32)
 
     def get_data(self, maxN=-1):
@@ -355,7 +387,7 @@ def load_unzip_data(h5_filename):
     return (X,y,misc)
 
 
-def load_zip_train_test_data(directory, batch_size, num_train_batches=None, num_test_batches=None, max_files = None):
+def load_zip_train_test_data(directory, batch_size, num_train_batches=None, num_test_batches=None, max_files = None,train_test_ratio=0.8):
     # List all .h5 files in the directory
     h5_files = [os.path.join(directory, f) for f in os.listdir(directory) if f.endswith('.h5')]
     if max_files != None:

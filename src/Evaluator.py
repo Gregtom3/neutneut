@@ -116,7 +116,6 @@ class Evaluator:
             'pred_neutron': out[:,:,4].flatten(),
             'pred_other': out[:,:,5].flatten(),
         }
-
         self.dataframe = pd.DataFrame(df_data)
 
         # Remove rows where all specified columns are zero
@@ -313,8 +312,7 @@ class Evaluator:
             # Added 10/10/2024
             # clusters_df needs its 'event' column rescaled
             self.clusters_df['file_event'] = self.clusters_df['event']
-            self.clusters_df['file_event'] = self.clusters_df['file_event']-self.clusters_df['file_event'].values[0]
-        
+
             # Define the bank names and types for ECAL::clusters_OC
             cluster_bank = "ECAL::clusters_OC"
             cluster_names = ["id", "status", "sector", "layer", "x", "y", "z", "energy", "time", 
@@ -350,28 +348,50 @@ class Evaluator:
 
             # Iterate through events and write data to the hipo file
             for event, _ in enumerate(file):
-                event_group = self.clusters_df[self.clusters_df['file_event'] == event]
-                # Cluster data
-                cluster_data = [
-                    [int(uid) for uid in event_group["uid"].tolist()],            # 'id' should be short ('S')
-                    [int(status) for status in event_group["status"].tolist()],   # 'status' should be short ('S')
-                    [int(sector) for sector in event_group["sector"].tolist()],   # 'sector' should be byte ('B')
-                    [int(layer) for layer in event_group["layer"].tolist()],      # 'layer' should be byte ('B')
-                    [float(x) for x in event_group["x"].tolist()],                # 'x' should be float ('F')
-                    [float(y) for y in event_group["y"].tolist()],                # 'y' should be float ('F')
-                    [float(z) for z in event_group["z"].tolist()],                # 'z' should be float ('F')
-                    [float(energy) for energy in event_group["energy"].tolist()], # 'energy' should be float ('F')
-                    [float(time) for time in event_group["time"].tolist()],       # 'time' should be float ('F')
-                    [float(widthU) for widthU in event_group["widthU"].tolist()], # 'widthU' should be float ('F')
-                    [float(widthV) for widthV in event_group["widthV"].tolist()], # 'widthV' should be float ('F')
-                    [float(widthW) for widthW in event_group["widthW"].tolist()], # 'widthW' should be float ('F')
-                    [int(idU) for idU in event_group["idU"].tolist()],            # 'idU' should be byte ('B')
-                    [int(idV) for idV in event_group["idV"].tolist()],            # 'idV' should be byte ('B')
-                    [int(idW) for idW in event_group["idW"].tolist()],            # 'idW' should be byte ('B')
-                    [int(coordU) for coordU in event_group["coordU"].tolist()],   # 'coordU' should be integer ('I')
-                    [int(coordV) for coordV in event_group["coordV"].tolist()],   # 'coordV' should be integer ('I')
-                    [int(coordW) for coordW in event_group["coordW"].tolist()]    # 'coordW' should be integer ('I')
-                ]
+                if event not in self.clusters_df['file_event'].values:
+                    cluster_data = [
+                        [0],          # 'id' should be short ('S')
+                        [0],          # 'status' should be short ('S')
+                        [0],          # 'sector' should be byte ('B')
+                        [0],          # 'layer' should be byte ('B')
+                        [0.0],        # 'x' should be float ('F')
+                        [0.0],        # 'y' should be float ('F')
+                        [0.0],        # 'z' should be float ('F')
+                        [0.0],        # 'energy' should be float ('F')
+                        [0.0],        # 'time' should be float ('F')
+                        [0.0],        # 'widthU' should be float ('F')
+                        [0.0],        # 'widthV' should be float ('F')
+                        [0.0],        # 'widthW' should be float ('F')
+                        [0],          # 'idU' should be byte ('B')
+                        [0],          # 'idV' should be byte ('B')
+                        [0],          # 'idW' should be byte ('B')
+                        [0],          # 'coordU' should be integer ('I')
+                        [0],          # 'coordV' should be integer ('I')
+                        [0]           # 'coordW' should be integer ('I')
+                    ]
+                else:
+                    event_group = self.clusters_df[self.clusters_df['file_event'] == event]
+                    # Cluster data
+                    cluster_data = [
+                        [int(uid) for uid in event_group["uid"].tolist()],            # 'id' should be short ('S')
+                        [int(status) for status in event_group["status"].tolist()],   # 'status' should be short ('S')
+                        [int(sector) for sector in event_group["sector"].tolist()],   # 'sector' should be byte ('B')
+                        [int(layer) for layer in event_group["layer"].tolist()],      # 'layer' should be byte ('B')
+                        [float(x) for x in event_group["x"].tolist()],                # 'x' should be float ('F')
+                        [float(y) for y in event_group["y"].tolist()],                # 'y' should be float ('F')
+                        [float(z) for z in event_group["z"].tolist()],                # 'z' should be float ('F')
+                        [float(energy) for energy in event_group["energy"].tolist()], # 'energy' should be float ('F')
+                        [float(time) for time in event_group["time"].tolist()],       # 'time' should be float ('F')
+                        [float(widthU) for widthU in event_group["widthU"].tolist()], # 'widthU' should be float ('F')
+                        [float(widthV) for widthV in event_group["widthV"].tolist()], # 'widthV' should be float ('F')
+                        [float(widthW) for widthW in event_group["widthW"].tolist()], # 'widthW' should be float ('F')
+                        [int(idU) for idU in event_group["idU"].tolist()],            # 'idU' should be byte ('B')
+                        [int(idV) for idV in event_group["idV"].tolist()],            # 'idV' should be byte ('B')
+                        [int(idW) for idW in event_group["idW"].tolist()],            # 'idW' should be byte ('B')
+                        [int(coordU) for coordU in event_group["coordU"].tolist()],   # 'coordU' should be integer ('I')
+                        [int(coordV) for coordV in event_group["coordV"].tolist()],   # 'coordV' should be integer ('I')
+                        [int(coordW) for coordW in event_group["coordW"].tolist()]    # 'coordW' should be integer ('I')
+                    ]
                 # Write data for the event to the clusters bank
                 file.update({cluster_bank: cluster_data})
 
@@ -383,24 +403,27 @@ class Evaluator:
             file.open()
             # Iterate through events and write data to the hipo file
             for event, _ in enumerate(file):
-                event_group = self.clusters_df[self.clusters_df['file_event'] == event]
-
-                # Moments data, all zeros, with the same length as the cluster data entries
-                num_entries = len(event_group["uid"])
-                moments_data = [
-                    [0.0] * num_entries,  # 'distU' should be float ('F')
-                    [0.0] * num_entries,  # 'distV' should be float ('F')
-                    [0.0] * num_entries,  # 'distW' should be float ('F')
-                    [0.0] * num_entries,  # 'm1u' should be float ('F')
-                    [0.0] * num_entries,  # 'm1v' should be float ('F')
-                    [0.0] * num_entries,  # 'm1w' should be float ('F')
-                    [0.0] * num_entries,  # 'm2u' should be float ('F')
-                    [0.0] * num_entries,  # 'm2v' should be float ('F')
-                    [0.0] * num_entries,  # 'm2w' should be float ('F')
-                    [0.0] * num_entries,  # 'm3u' should be float ('F')
-                    [0.0] * num_entries,  # 'm3v' should be float ('F')
-                    [0.0] * num_entries   # 'm3w' should be float ('F')
-                ]
+                if event not in self.clusters_df['file_event'].values:
+                    moments_data = [[0.0]]*12
+                else:
+                    event_group = self.clusters_df[self.clusters_df['file_event'] == event]
+    
+                    # Moments data, all zeros, with the same length as the cluster data entries
+                    num_entries = len(event_group["uid"])
+                    moments_data = [
+                        [0.0] * num_entries,  # 'distU' should be float ('F')
+                        [0.0] * num_entries,  # 'distV' should be float ('F')
+                        [0.0] * num_entries,  # 'distW' should be float ('F')
+                        [0.0] * num_entries,  # 'm1u' should be float ('F')
+                        [0.0] * num_entries,  # 'm1v' should be float ('F')
+                        [0.0] * num_entries,  # 'm1w' should be float ('F')
+                        [0.0] * num_entries,  # 'm2u' should be float ('F')
+                        [0.0] * num_entries,  # 'm2v' should be float ('F')
+                        [0.0] * num_entries,  # 'm2w' should be float ('F')
+                        [0.0] * num_entries,  # 'm3u' should be float ('F')
+                        [0.0] * num_entries,  # 'm3v' should be float ('F')
+                        [0.0] * num_entries   # 'm3w' should be float ('F')
+                    ]
 
                 # Write data for the event to the moments bank
                 file.update({moments_bank: moments_data})
@@ -413,30 +436,52 @@ class Evaluator:
             file.open()
             # Iterate through events and write data to the hipo file
             for event, _ in enumerate(file):
-                event_group = self.clusters_df[self.clusters_df['file_event'] == event]
-
-                # Calib data, all zeros, same length as the cluster data
-                num_entries = len(event_group["uid"])
-                calib_data = [
-                    [0] * num_entries,  # 'sector' as byte
-                    [0] * num_entries,  # 'layer' as byte
-                    [0.0] * num_entries,  # 'size' as float
-                    [0] * num_entries,  # 'dbstU' as short
-                    [0] * num_entries,  # 'dbstV' as short
-                    [0] * num_entries,  # 'dbstW' as short
-                    [0.0] * num_entries,  # 'rawEU' as float
-                    [0.0] * num_entries,  # 'rawEV' as float
-                    [0.0] * num_entries,  # 'rawEW' as float
-                    [0.0] * num_entries,  # 'recEU' as float
-                    [0.0] * num_entries,  # 'recEV' as float
-                    [0.0] * num_entries,  # 'recEW' as float
-                    [0.0] * num_entries,  # 'recDTU' as float
-                    [0.0] * num_entries,  # 'recDTV' as float
-                    [0.0] * num_entries,  # 'recDTW' as float
-                    [0.0] * num_entries,  # 'recFTU' as float
-                    [0.0] * num_entries,  # 'recFTV' as float
-                    [0.0] * num_entries   # 'recFTW' as float
-                ]
+                if event not in self.clusters_df['file_event'].values:
+                    calib_data = [
+                        [0],        # 'sector' as byte
+                        [0],        # 'layer' as byte
+                        [0.0],      # 'size' as float
+                        [0],        # 'dbstU' as short
+                        [0],        # 'dbstV' as short
+                        [0],        # 'dbstW' as short
+                        [0.0],      # 'rawEU' as float
+                        [0.0],      # 'rawEV' as float
+                        [0.0],      # 'rawEW' as float
+                        [0.0],      # 'recEU' as float
+                        [0.0],      # 'recEV' as float
+                        [0.0],      # 'recEW' as float
+                        [0.0],      # 'recDTU' as float
+                        [0.0],      # 'recDTV' as float
+                        [0.0],      # 'recDTW' as float
+                        [0.0],      # 'recFTU' as float
+                        [0.0],      # 'recFTV' as float
+                        [0.0]       # 'recFTW' as float
+                    ]
+                else:
+                    event_group = self.clusters_df[self.clusters_df['file_event'] == event]
+    
+                    # Calib data, all zeros, same length as the cluster data
+                    num_entries = len(event_group["uid"])
+                    calib_data = [
+                        [0] * num_entries,  # 'sector' as byte
+                        [0] * num_entries,  # 'layer' as byte
+                        [0.0] * num_entries,  # 'size' as float
+                        [0] * num_entries,  # 'dbstU' as short
+                        [0] * num_entries,  # 'dbstV' as short
+                        [0] * num_entries,  # 'dbstW' as short
+                        [0.0] * num_entries,  # 'rawEU' as float
+                        [0.0] * num_entries,  # 'rawEV' as float
+                        [0.0] * num_entries,  # 'rawEW' as float
+                        [0.0] * num_entries,  # 'recEU' as float
+                        [0.0] * num_entries,  # 'recEV' as float
+                        [0.0] * num_entries,  # 'recEW' as float
+                        [0.0] * num_entries,  # 'recDTU' as float
+                        [0.0] * num_entries,  # 'recDTV' as float
+                        [0.0] * num_entries,  # 'recDTW' as float
+                        [0.0] * num_entries,  # 'recFTU' as float
+                        [0.0] * num_entries,  # 'recFTV' as float
+                        [0.0] * num_entries   # 'recFTW' as float
+                    ]
 
                 # Write data for the event to the calib bank
                 file.update({calib_bank: calib_data})

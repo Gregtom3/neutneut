@@ -230,7 +230,7 @@ class ModelEcalPlotter:
                 cluster_y = self.reco_cluster_y[ihit]
                 color = self.colors[ic % len(self.colors)]
                 # Commenting out centroid plotting
-                # ax.scatter(cluster_x,cluster_y,color=color,s=15,edgecolor="k",marker="o",zorder=100)
+                ax.scatter(cluster_x,cluster_y,color=color,s=15,edgecolor="k",marker="o",zorder=100)
         ax.legend(frameon=True, ncols=2, bbox_to_anchor=(0.5, -0.15), loc='upper center')
         ax.set_xlabel("ECAL::hits (X)")
         ax.set_ylabel("ECAL::hits (Y)")
